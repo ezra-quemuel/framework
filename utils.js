@@ -3266,3 +3266,17 @@ function converBytesToInt64(data, startIndex, isLE) {
 
 global.async = exports.async;
 global.sync = exports.sync;
+
+
+exports.defineAlias = function(classObj, name, aliasTo, deprecate) {
+    classObj.prototype[name] = function () {
+        if (deprecate) console.log('FrameworkPath.' + name + ' is deprecated, use FrameworkPath.' + aliasTo + ' instead.');
+        return this[aliasTo].apply(this, arguments);
+    }
+};
+
+exports.defineAliases = function (modelClass, aliases) {
+    aliases.forEach(function (fn) {
+        exports.defineAlias(modelClass, fn.name, fn.aliasTo, fn.deprecate);
+    });
+};

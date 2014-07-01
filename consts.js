@@ -1,0 +1,15 @@
+exports.ENCODING = 'utf8';
+exports.UNDEFINED = 'undefined';
+exports.STRING = 'string';
+exports.FUNCTION = 'function';
+exports.NUMBER = 'number';
+exports.OBJECT = 'object';
+exports.BOOLEAN = 'boolean';
+exports.EXTENSION_JS = '.js';
+exports.EXTENSION_COFFEE = '.coffee';
+exports.RESPONSE_HEADER_CACHECONTROL = 'Cache-Control';
+exports.RESPONSE_HEADER_CONTENTTYPE = 'Content-Type';
+exports.RESPONSE_HEADER_CONTENTLENGTH = 'Content-Length';
+exports.CONTENTTYPE_TEXTPLAIN = 'text/plain';
+exports.CONTENTTYPE_TEXTHTML = 'text/html';
+exports.REQUEST_COMPRESS_CONTENTTYPE = [exports.CONTENTTYPE_TEXTPLAIN, 'text/javascript', 'text/css', 'application/x-javascript', exports.CONTENTTYPE_TEXTHTML];

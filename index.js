@@ -14,28 +14,11 @@ var path = require('path');
 var crypto = require('crypto');
 var parser = require('url');
 var events = require('events');
-var sys = require('sys');
 var internal = require('./internal');
-var http = require('http');
+var http = require('./http');
 var directory = process.cwd();
-var child = require('child_process');
-
-var ENCODING = 'utf8';
-var UNDEFINED = 'undefined';
-var STRING = 'string';
-var FUNCTION = 'function';
-var NUMBER = 'number';
-var OBJECT = 'object';
-var BOOLEAN = 'boolean';
-var REQUEST_COMPRESS_EXTENSION = ['js', 'css', 'txt'];
-var EXTENSION_JS = '.js';
-var EXTENSION_COFFEE = '.coffee';
-var RESPONSE_HEADER_CACHECONTROL = 'Cache-Control';
-var RESPONSE_HEADER_CONTENTTYPE = 'Content-Type';
-var RESPONSE_HEADER_CONTENTLENGTH = 'Content-Length';
-var CONTENTTYPE_TEXTPLAIN = 'text/plain';
-var CONTENTTYPE_TEXTHTML = 'text/html';
-var REQUEST_COMPRESS_CONTENTTYPE = [CONTENTTYPE_TEXTPLAIN, 'text/javascript', 'text/css', 'application/x-javascript', CONTENTTYPE_TEXTHTML];
+var fsUtils = require('./fsutils');
+var consts = require('./consts');
 
 var _controller = '';
 var _test = '';
@@ -44,32 +27,32 @@ global.Builders = global.builders = require('./builders');
 var utils = global.Utils = global.utils = require('./utils');
 global.Mail = global.MAIL = require('./mail');
 
-global.include = global.INCLUDE = global.source = global.SOURCE = function(name) {
+global.include = global.INCLUDE = global.source = global.SOURCE = function (name) {
     return framework.source(name);
 };
 
-global.MODULE = function(name) {
+global.MODULE = function (name) {
     return framework.module(name);
 };
 
-global.DATABASE = function() {
+global.DATABASE = function () {
     return framework.database.apply(framework, arguments);
 };
 
 
-global.CONFIG = function(name) {
+global.CONFIG = function (name) {
     return framework.config[name];
 };
 
-global.RESOURCE = function(name, key) {
+global.RESOURCE = function (name, key) {
     return framework.resource(name, key);
 };
 
-global.MODEL = function(name) {
+global.MODEL = function (name) {
     return framework.model(name);
 };
 
-global.COMPONENT = function(name) {
+global.COMPONENT = function (name) {
     var component = framework.component(name);
 
     if (component === null)
@@ -84,8 +67,8 @@ global.COMPONENT = function(name) {
     return component.render.apply(self, params);
 };
 
-if (typeof(setImmediate) === UNDEFINED) {
-    global.setImmediate = function(cb) {
+if (typeof(setImmediate) === consts.UNDEFINED) {
+    global.setImmediate = function (cb) {
         process.nextTick(cb);
     };
 }
@@ -134,7 +117,7 @@ function Framework() {
         'static-url-video': '/video/',
         'static-url-font': '/font/',
         'static-url-download': '/download/',
-        'static-accepts': ['.jpg', '.png', '.gif', '.ico', EXTENSION_JS, EXTENSION_COFFEE, '.css', '.txt', '.xml', '.woff', '.otf', '.ttf', '.eot', '.svg', '.zip', '.rar', '.pdf', '.docx', '.xlsx', '.doc', '.xls', '.html', '.htm', '.appcache', '.map', '.ogg', '.mp4', '.mp3', '.webp', '.webm', '.swf', '.package', '.json'],
+        'static-accepts': ['.jpg', '.png', '.gif', '.ico', consts.EXTENSION_JS, consts.EXTENSION_COFFEE, '.css', '.txt', '.xml', '.woff', '.otf', '.ttf', '.eot', '.svg', '.zip', '.rar', '.pdf', '.docx', '.xlsx', '.doc', '.xls', '.html', '.htm', '.appcache', '.map', '.ogg', '.mp4', '.mp3', '.webp', '.webm', '.swf', '.package', '.json'],
 
         // 'static-accepts-custom': [],
 
@@ -146,8 +129,6 @@ function Framework() {
         // default maximum request size / length
         // default 5 kB
         'default-request-length': 1024 * 5,
-        'default-websocket-request-length': 1024 * 5,
-        'default-websocket-encodedecode': true,
 
         // in milliseconds
         'default-request-timeout': 3000,
@@ -158,11 +139,10 @@ function Framework() {
         'default-image-quality': 93,
 
         'allow-gzip': true,
-        'allow-websocket': true,
         'allow-compile-js': true,
         'allow-compile-css': true,
         'allow-compress-html': true,
-        'allow-performance': false,
+        'allow-performance': false
     };
 
     this.global = {};
@@ -262,8 +242,8 @@ function Framework() {
 
     // intialize cache
     this.cache = new FrameworkCache(this);
-    this.fs = new FrameworkFileSystem(this);
-    this.path = new FrameworkPath(this);
+    this.fs = new fsUtils.FrameworkFileSystem(this);
+    this.path = new fsUtils.FrameworkPath(this);
     this.restrictions = new FrameworkRestrictions(this);
 
     this._request_check_redirect = false;
@@ -287,7 +267,7 @@ Framework.prototype = {
 
         var self = this;
 
-        if (typeof(self._async) === UNDEFINED)
+        if (typeof(self._async) === consts.UNDEFINED)
             self._async = new utils.Async(self);
 
         return self._async;
@@ -301,7 +281,7 @@ Framework.prototype.__proto__ = new events.EventEmitter();
  * @param {Boolean} clear Clear temporary files, optional
  * @return {Framework}
  */
-Framework.prototype.refresh = function(clear) {
+Framework.prototype.refresh = function (clear) {
     var self = this;
 
     self.emit('clear', 'refresh');
@@ -325,12 +305,12 @@ Framework.prototype.refresh = function(clear) {
 };
 
 /*
-    Add/Register a new controller
-    @name {String}
-    @definition {Object} :: optional, controller definition
-    return {Framework}
-*/
-Framework.prototype.controller = function(name, definition) {
+ Add/Register a new controller
+ @name {String}
+ @definition {Object} :: optional, controller definition
+ return {Framework}
+ */
+Framework.prototype.controller = function (name, definition) {
 
     var self = this;
 
@@ -347,12 +327,12 @@ Framework.prototype.controller = function(name, definition) {
 
         var filename = path.join(directory, self.config['directory-controllers'], name);
         if (self.isCoffee) {
-            if (fs.existsSync(filename + EXTENSION_COFFEE))
-                filename += EXTENSION_COFFEE;
+            if (fs.existsSync(filename + consts.EXTENSION_COFFEE))
+                filename += consts.EXTENSION_COFFEE;
             else
-                filename += EXTENSION_JS;
+                filename += consts.EXTENSION_JS;
         } else
-            filename += EXTENSION_JS;
+            filename += consts.EXTENSION_JS;
 
         obj = require(filename);
 
@@ -378,11 +358,11 @@ Framework.prototype.controller = function(name, definition) {
  * Sort routes
  * @return {Framework}
  */
-Framework.prototype.routesSort = function() {
+Framework.prototype.routesSort = function () {
 
     var self = this;
 
-    self.routes.web.sort(function(a, b) {
+    self.routes.web.sort(function (a, b) {
         if (a.priority > b.priority)
             return -1;
 
@@ -392,7 +372,7 @@ Framework.prototype.routesSort = function() {
         return 0;
     });
 
-    self.routes.websockets.sort(function(a, b) {
+    self.routes.websockets.sort(function (a, b) {
         if (a.priority > b.priority)
             return -1;
 
@@ -406,16 +386,16 @@ Framework.prototype.routesSort = function() {
 };
 
 /*
-    @name {String} :: file name of database
-    return {nosql}
-*/
-Framework.prototype.database = function(name) {
+ @name {String} :: file name of database
+ return {nosql}
+ */
+Framework.prototype.database = function (name) {
 
     var self = this;
 
     var db = self.databases[name];
 
-    if (typeof(db) !== UNDEFINED)
+    if (typeof(db) !== consts.UNDEFINED)
         return db;
 
     self._verify_directory('databases');
@@ -427,14 +407,14 @@ Framework.prototype.database = function(name) {
 };
 
 /*
-    Stop the server and exit
-    @code {Number} :: optional, exit code - default 0
-    return {Framework}
-*/
-Framework.prototype.stop = function(code) {
+ Stop the server and exit
+ @code {Number} :: optional, exit code - default 0
+ return {Framework}
+ */
+Framework.prototype.stop = function (code) {
     var self = this;
 
-    if (typeof(process.send) === FUNCTION)
+    if (typeof(process.send) === consts.FUNCTION)
         process.send('stop');
 
     self.cache.stop();
@@ -452,7 +432,7 @@ Framework.prototype.stop = function(code) {
  * @param  {Boolean} permanent Is permanent redirect (302)? (default: false)
  * @return {Framework}
  */
-Framework.prototype.redirect = function(host, newHost, withPath, permanent) {
+Framework.prototype.redirect = function (host, newHost, withPath, permanent) {
     var self = this;
 
     if (host[host.length - 1] === '/')
@@ -481,7 +461,7 @@ Framework.prototype.redirect = function(host, newHost, withPath, permanent) {
  * @param {String} path Source directory (optional).
  * @return {Framework}
  */
-Framework.prototype.resize = function(url, width, height, options, path, extensions) {
+Framework.prototype.resize = function (url, width, height, options, path, extensions) {
     var self = this;
     var extension = null;
     var index = url.lastIndexOf('.');
@@ -537,7 +517,7 @@ Framework.prototype.resize = function(url, width, height, options, path, extensi
  * @param  {Number timeout Response timeout.
  * @return {Framework}
  */
-Framework.prototype.route = function(url, funcExecute, flags, maximumSize, middleware, timeout, options) {
+Framework.prototype.route = function (url, funcExecute, flags, maximumSize, middleware, timeout, options) {
 
     if (url === '')
         url = '/';
@@ -548,7 +528,7 @@ Framework.prototype.route = function(url, funcExecute, flags, maximumSize, middl
         maximumSize = tmp;
     }
 
-    if (typeof(funcExecute) === OBJECT || funcExecute instanceof Array) {
+    if (typeof(funcExecute) === consts.OBJECT || funcExecute instanceof Array) {
         var tmp = funcExecute;
         funcExecute = flags;
         flags = tmp;
@@ -639,7 +619,7 @@ Framework.prototype.route = function(url, funcExecute, flags, maximumSize, middl
     var arr = [];
 
     if (url.indexOf('{') !== -1) {
-        routeURL.forEach(function(o, i) {
+        routeURL.forEach(function (o, i) {
             if (o.substring(0, 1) === '{')
                 arr.push(i);
         });
@@ -697,7 +677,7 @@ Framework.prototype.route = function(url, funcExecute, flags, maximumSize, middl
         onExecute: funcExecute,
         maximumSize: (maximumSize || self.config['default-request-length']) * 1024,
         middleware: middleware,
-        timeout: typeof(timeout) === UNDEFINED ? self.config['default-request-timeout'] : timeout,
+        timeout: typeof(timeout) === consts.UNDEFINED ? self.config['default-request-timeout'] : timeout,
         isJSON: flags.indexOf('json') !== -1,
         isXML: flags.indexOf('xml') !== -1,
         isRAW: isRaw,
@@ -707,7 +687,7 @@ Framework.prototype.route = function(url, funcExecute, flags, maximumSize, middl
         options: options
     });
 
-    self.emit('route-add', 'web', self.routes.web[self.routes.web.length-1]);
+    self.emit('route-add', 'web', self.routes.web[self.routes.web.length - 1]);
 
     if (_controller.length === 0)
         self.routesSort();
@@ -716,12 +696,12 @@ Framework.prototype.route = function(url, funcExecute, flags, maximumSize, middl
 };
 
 /*
-    Add a middleware
-    @name {String} :: Middleware name
-    @funcExecute {Function(next, req, res)} :: optional
-    return {Framework}
-*/
-Framework.prototype.middleware = function(name, funcExecute) {
+ Add a middleware
+ @name {String} :: Middleware name
+ @funcExecute {Function(next, req, res)} :: optional
+ return {Framework}
+ */
+Framework.prototype.middleware = function (name, funcExecute) {
     var self = this;
     self.routes.middleware[name] = funcExecute;
     self._length_middleware = Object.keys(self.routes.middleware).length;
@@ -733,7 +713,7 @@ Framework.prototype.middleware = function(name, funcExecute) {
  * @param {String} name
  * @return {Framework}
  */
-Framework.prototype.use = function(name) {
+Framework.prototype.use = function (name) {
     var self = this;
 
     if (arguments.length > 0) {
@@ -751,155 +731,16 @@ Framework.prototype.use = function(name) {
 };
 
 /*
-    Add a new partial route
-    @name {String or Function} :: if @name is function, route will be a global partial content
-    @funcExecute {Function} :: optional
-    return {Framework}
-*/
-Framework.prototype.partial = function(name, funcExecute) {
+ Add a new partial route
+ @name {String or Function} :: if @name is function, route will be a global partial content
+ @funcExecute {Function} :: optional
+ return {Framework}
+ */
+Framework.prototype.partial = function (name, funcExecute) {
     console.log('OBSOLETE: framework.partial(), use: framework.middleware()');
     return this.middleware(name, funcExecute);
 };
 
-/*
-    Add a new websocket route
-    @url {String}
-    @funcInitialize {Function}
-    @flags {String Array or Object} :: optional
-    @protocols {String Array} :: optional, websocket-allow-protocols
-    @allow {String Array} :: optional, allow origin
-    @maximumSize {Number} :: optional, default by the config
-    @middleware {String Array} :: optional, middleware
-    return {Framework}
-*/
-Framework.prototype.websocket = function(url, funcInitialize, flags, protocols, allow, maximumSize, middleware, options) {
-
-    if (url === '')
-        url = '/';
-
-    if (utils.isArray(maximumSize)) {
-        var tmp = middleware;
-        middleware = maximumSize;
-        maximumSize = tmp;
-    }
-
-    if (typeof(funcExecute) === OBJECT) {
-        var tmp = flags;
-        funcExecute = flags;
-        flags = tmp;
-    }
-
-    if (!utils.isArray(flags) && typeof(flags) === 'object') {
-        protocols = flags['protocols'] || flags['protocol'];
-        allow = flags['allow'] || flags['origin'];
-        maximumSize = flags['max'] || flags['length'] || flags['maximum'] || flags['maximumSize'];
-        middleware = flags['middleware'];
-        options = flags['options'];
-        flags = flags['flags'];
-    }
-
-    if (typeof(middleware) === UNDEFINED)
-        middleware = null;
-
-    var self = this;
-    var priority = 0;
-    var index = url.indexOf(']');
-    var subdomain = null;
-    var isASTERIX = url.indexOf('*') !== -1;
-
-    priority = url.count('/');
-
-    if (index > 0) {
-        subdomain = url.substring(1, index).trim().toLowerCase().split(',');
-        url = url.substring(index + 1);
-        priority += 2;
-    }
-
-    if (isASTERIX) {
-        url = url.replace('*', '').replace('//', '/');
-        priority = (-10) - priority;
-    }
-
-    var arr = [];
-    var routeURL = internal.routeSplit(url.trim());
-
-    if (url.indexOf('{') !== -1) {
-        routeURL.forEach(function(o, i) {
-            if (o.substring(0, 1) === '{')
-                arr.push(i);
-        });
-        priority -= arr.length;
-    }
-
-    if (typeof(allow) === STRING)
-        allow = allow[allow];
-
-    if (typeof(protocols) === STRING)
-        protocols = protocols[protocols];
-
-    if (typeof(flags) === STRING)
-        flags = flags[flags];
-
-    var isJSON = false;
-    var isBINARY = false;
-    var tmp = [];
-
-    if (typeof(flags) === UNDEFINED)
-        flags = [];
-
-    for (var i = 0; i < flags.length; i++) {
-        flags[i] = flags[i].toString().toLowerCase();
-
-        if (flags[i] === 'json')
-            isJSON = true;
-
-        if (flags[i] === 'binary')
-            isBINARY = true;
-
-        if (flags[i] === 'raw') {
-            isBINARY = false;
-            isJSON = false;
-        }
-
-        if (flags[i] !== 'json' && flags[i] !== 'binary' && flags[i] !== 'raw')
-            tmp.push(flags[i]);
-    }
-
-    flags = tmp;
-
-    priority += (flags.length * 2);
-
-    var isMember = false;
-
-    if (!flags || (flags.indexOf('logged') === -1 && flags.indexOf('authorize') === -1))
-        isMember = true;
-
-    self.routes.websockets.push({
-        name: (_controller || '').length === 0 ? 'unknown' : _controller,
-        url: routeURL,
-        param: arr,
-        subdomain: subdomain,
-        priority: priority,
-        flags: flags || [],
-        onInitialize: funcInitialize,
-        protocols: protocols || [],
-        allow: allow || [],
-        length: (maximumSize || self.config['default-websocket-request-length']) * 1024,
-        isMEMBER: isMember,
-        isJSON: isJSON,
-        isBINARY: isBINARY,
-        isASTERIX: isASTERIX,
-        middleware: middleware,
-        options: options
-    });
-
-    self.emit('route-add', 'websocket', self.routes.websockets[self.routes.websockets.length-1]);
-
-    if (_controller.length === 0)
-        self.routesSort();
-
-    return self;
-};
 
 /**
  * Create a file route
@@ -909,7 +750,7 @@ Framework.prototype.websocket = function(url, funcInitialize, flags, protocols, 
  * @param {String Array} middleware
  * @return {Framework}
  */
-Framework.prototype.file = function(name, fnValidation, fnExecute, middleware, options) {
+Framework.prototype.file = function (name, fnValidation, fnExecute, middleware, options) {
     var self = this;
 
     if (utils.isArray(fnValidation)) {
@@ -924,7 +765,7 @@ Framework.prototype.file = function(name, fnValidation, fnExecute, middleware, o
         middleware = a;
     }
 
-    if (typeof(middleware) === UNDEFINED)
+    if (typeof(middleware) === consts.UNDEFINED)
         middleware = null;
 
     self.routes.files.push({
@@ -936,20 +777,20 @@ Framework.prototype.file = function(name, fnValidation, fnExecute, middleware, o
         options: options
     });
 
-    self.emit('route-add', 'file', self.routes.files[self.routes.files.length-1]);
+    self.emit('route-add', 'file', self.routes.files[self.routes.files.length - 1]);
     self._length_files++;
 
     return self;
 };
 
 /*
-    Error caller
-    @err {Error}
-    @name {String} :: controller name
-    @uri {URI} :: optional
-    return {Framework}
-*/
-Framework.prototype.error = function(err, name, uri) {
+ Error caller
+ @err {Error}
+ @name {String} :: controller name
+ @uri {URI} :: optional
+ return {Framework}
+ */
+Framework.prototype.error = function (err, name, uri) {
     var self = this;
 
     if (self.errors !== null) {
@@ -969,14 +810,14 @@ Framework.prototype.error = function(err, name, uri) {
 };
 
 /*
-    Problem caller
-    @message {String}
-    @name {String} :: controller name
-    @uri {URI} :: optional
-    @ip {String} :: optional
-    return {Framework}
-*/
-Framework.prototype.problem = function(message, name, uri, ip) {
+ Problem caller
+ @message {String}
+ @name {String} :: controller name
+ @uri {URI} :: optional
+ @ip {String} :: optional
+ return {Framework}
+ */
+Framework.prototype.problem = function (message, name, uri, ip) {
     var self = this;
 
     if (self.problems !== null) {
@@ -996,14 +837,14 @@ Framework.prototype.problem = function(message, name, uri, ip) {
 };
 
 /*
-    Change caller
-    @message {String}
-    @name {String} :: controller name
-    @uri {URI} :: optional
-    @ip {String} :: optional
-    return {Framework}
-*/
-Framework.prototype.change = function(message, name, uri, ip) {
+ Change caller
+ @message {String}
+ @name {String} :: controller name
+ @uri {URI} :: optional
+ @ip {String} :: optional
+ return {Framework}
+ */
+Framework.prototype.change = function (message, name, uri, ip) {
     var self = this;
 
     if (self.changes !== null) {
@@ -1023,16 +864,16 @@ Framework.prototype.change = function(message, name, uri, ip) {
 };
 
 /*
-    Module caller
-    @name {String}
-    return {Object} :: framework return require();
-*/
-Framework.prototype.module = function(name) {
+ Module caller
+ @name {String}
+ return {Object} :: framework return require();
+ */
+Framework.prototype.module = function (name) {
 
     var self = this;
     var module = self.modules[name];
 
-    if (typeof(module) !== UNDEFINED)
+    if (typeof(module) !== consts.UNDEFINED)
         return module;
 
     if (self.isLoaded)
@@ -1044,34 +885,34 @@ Framework.prototype.module = function(name) {
 
     if (self.isCoffee) {
         if (fs.existsSync(filename))
-            filename += EXTENSION_COFFEE;
+            filename += consts.EXTENSION_COFFEE;
         else
-            filename += EXTENSION_JS;
+            filename += consts.EXTENSION_JS;
     } else
-        filename += EXTENSION_JS;
+        filename += consts.EXTENSION_JS;
 
     if (!fs.existsSync(filename)) {
 
         filename = path.join(directory, configDirectory, name, name);
 
         if (self.isCoffee) {
-            if (fs.existsSync(filename + EXTENSION_COFFEE))
-                filename += EXTENSION_COFFEE;
+            if (fs.existsSync(filename + consts.EXTENSION_COFFEE))
+                filename += consts.EXTENSION_COFFEE;
             else
-                filename += EXTENSION_JS;
+                filename += consts.EXTENSION_JS;
         } else
-            filename += EXTENSION_JS;
+            filename += consts.EXTENSION_JS;
 
         if (!fs.existsSync(filename)) {
 
             filename = path.join(directory, configDirectory, name, 'index');
             if (self.isCoffee) {
-                if (fs.existsSync(filename + EXTENSION_COFFEE))
-                    filename += EXTENSION_COFFEE;
+                if (fs.existsSync(filename + consts.EXTENSION_COFFEE))
+                    filename += consts.EXTENSION_COFFEE;
                 else
-                    filename += EXTENSION_JS;
+                    filename += consts.EXTENSION_JS;
             } else
-                filename += EXTENSION_JS;
+                filename += consts.EXTENSION_JS;
 
         } else
             module = require(filename);
@@ -1084,12 +925,12 @@ Framework.prototype.module = function(name) {
     } else
         module = require(filename);
 
-    if (typeof(module) === UNDEFINED)
+    if (typeof(module) === consts.UNDEFINED)
         return null;
 
     _controller = '#module-' + name;
 
-    if (module !== null && typeof(module.directory) === UNDEFINED)
+    if (module !== null && typeof(module.directory) === consts.UNDEFINED)
         module.directory = isDirectory ? path.join(directory, configDirectory) : path.join(directory, configDirectory, name);
 
     self.modules[name] = module;
@@ -1097,15 +938,15 @@ Framework.prototype.module = function(name) {
 };
 
 /*
-    Component caller
-    @name {String}
-    return {Object} :: framework return require();
-*/
-Framework.prototype.component = function(name) {
+ Component caller
+ @name {String}
+ return {Object} :: framework return require();
+ */
+Framework.prototype.component = function (name) {
     var self = this;
     var component = self.components[name];
 
-    if (typeof(component) !== UNDEFINED)
+    if (typeof(component) !== consts.UNDEFINED)
         return component;
 
     if (self.isLoaded)
@@ -1116,36 +957,36 @@ Framework.prototype.component = function(name) {
     var isDirectory = false;
 
     if (self.isCoffee) {
-        if (fs.existsSync(filename + EXTENSION_COFFEE))
-            filename += EXTENSION_COFFEE;
+        if (fs.existsSync(filename + consts.EXTENSION_COFFEE))
+            filename += consts.EXTENSION_COFFEE;
         else
-            filename += EXTENSION_JS;
+            filename += consts.EXTENSION_JS;
     } else
-        filename += EXTENSION_JS;
+        filename += consts.EXTENSION_JS;
 
     if (!fs.existsSync(filename)) {
 
         filename = path.join(directory, configDirectory, name, name);
 
         if (self.isCoffee) {
-            if (fs.existsSync(filename + EXTENSION_COFFEE))
-                filename += EXTENSION_COFFEE;
+            if (fs.existsSync(filename + consts.EXTENSION_COFFEE))
+                filename += consts.EXTENSION_COFFEE;
             else
-                filename += EXTENSION_JS;
+                filename += consts.EXTENSION_JS;
         } else
-            filename += EXTENSION_JS;
+            filename += consts.EXTENSION_JS;
 
         if (!fs.existsSync(filename)) {
 
             filename = path.join(directory, configDirectory, name, 'index');
 
             if (self.isCoffee) {
-                if (fs.existsSync(filename + EXTENSION_COFFEE))
-                    filename += EXTENSION_COFFEE;
+                if (fs.existsSync(filename + consts.EXTENSION_COFFEE))
+                    filename += consts.EXTENSION_COFFEE;
                 else
-                    filename += EXTENSION_JS;
+                    filename += consts.EXTENSION_JS;
             } else
-                filename += EXTENSION_JS;
+                filename += consts.EXTENSION_JS;
 
             if (fs.existsSync(filename))
                 component = require(filename);
@@ -1157,10 +998,10 @@ Framework.prototype.component = function(name) {
     } else
         component = require(filename);
 
-    if (typeof(component) === UNDEFINED)
+    if (typeof(component) === consts.UNDEFINED)
         return null;
 
-    if (component !== null && typeof(component.directory) === UNDEFINED)
+    if (component !== null && typeof(component.directory) === consts.UNDEFINED)
         component.directory = isDirectory ? path.join(directory, configDirectory) : path.join(directory, configDirectory, name);
 
     _controller = '';
@@ -1169,24 +1010,24 @@ Framework.prototype.component = function(name) {
     if (component.install)
         component.install.call(self, self, name, component.directory);
 
-    if (typeof(component.render) === UNDEFINED)
+    if (typeof(component.render) === consts.UNDEFINED)
         throw new Error('Component must contain "export.render" function.');
 
     return component;
 };
 
 /*
-    Install/Init modules
-    return {Framework}
-*/
-Framework.prototype.install = function() {
+ Install/Init modules
+ return {Framework}
+ */
+Framework.prototype.install = function () {
 
     var self = this;
     var dir = path.join(directory, self.config['directory-controllers']);
     var framework = self;
 
     function install_controller(directory, level) {
-        fs.readdirSync(directory).forEach(function(o) {
+        fs.readdirSync(directory).forEach(function (o) {
 
             var isDirectory = fs.statSync(path.join(directory, o)).isDirectory();
             if (isDirectory) {
@@ -1196,7 +1037,7 @@ Framework.prototype.install = function() {
             }
 
             var ext = path.extname(o).toLowerCase();
-            if (ext !== EXTENSION_JS && ext !== EXTENSION_COFFEE)
+            if (ext !== consts.EXTENSION_JS && ext !== consts.EXTENSION_COFFEE)
                 return;
 
             self.controller((level > 0 ? directory.replace(dir, '') + '/' : '') + o.substring(0, o.length - ext.length));
@@ -1209,13 +1050,13 @@ Framework.prototype.install = function() {
     dir = path.join(directory, self.config['directory-modules']);
 
     if (fs.existsSync(dir)) {
-        fs.readdirSync(dir).forEach(function(o) {
+        fs.readdirSync(dir).forEach(function (o) {
 
             var ext = path.extname(o);
             var isDirectory = fs.statSync(path.join(dir + o)).isDirectory();
             var extLower = ext.toLowerCase();
 
-            if (!isDirectory && extLower !== EXTENSION_JS && extLower !== EXTENSION_COFFEE)
+            if (!isDirectory && extLower !== consts.EXTENSION_JS && extLower !== consts.EXTENSION_COFFEE)
                 return;
 
             var name = o.replace(ext, '');
@@ -1225,7 +1066,7 @@ Framework.prototype.install = function() {
 
             var module = self.module(name);
 
-            if (module === null || typeof(module.install) === UNDEFINED)
+            if (module === null || typeof(module.install) === consts.UNDEFINED)
                 return;
 
             try {
@@ -1240,13 +1081,13 @@ Framework.prototype.install = function() {
 
     dir = path.join(directory, self.config['directory-components']);
     if (fs.existsSync(dir)) {
-        fs.readdirSync(dir).forEach(function(o) {
+        fs.readdirSync(dir).forEach(function (o) {
 
             var ext = path.extname(o);
             var isDirectory = fs.statSync(path.join(dir + o)).isDirectory();
             var extLower = ext.toLowerCase();
 
-            if (!isDirectory && extLower !== EXTENSION_JS && extLower !== EXTENSION_COFFEE)
+            if (!isDirectory && extLower !== consts.EXTENSION_JS && extLower !== consts.EXTENSION_COFFEE)
                 return;
 
             var name = o.replace(ext, '');
@@ -1261,9 +1102,9 @@ Framework.prototype.install = function() {
     dir = path.join(directory, self.config['directory-definitions']);
 
     if (fs.existsSync(dir)) {
-        fs.readdirSync(dir).forEach(function(o) {
+        fs.readdirSync(dir).forEach(function (o) {
             var ext = path.extname(o).toLowerCase();
-            if (ext !== EXTENSION_JS && (ext !== EXTENSION_COFFEE))
+            if (ext !== consts.EXTENSION_JS && (ext !== consts.EXTENSION_COFFEE))
                 return;
             var data = fs.readFileSync(path.join(dir, o), 'utf8').toString();
 
@@ -1278,23 +1119,23 @@ Framework.prototype.install = function() {
 };
 
 /*
-    Inject configuration from URL
-    @url {String}
-    @debug {Boolean} :: optional, is debug configuration
-    @rewrite {Boolean} :: optional (default true), rewrite all values or append new values only
-    return {Framework}
-*/
-Framework.prototype.injectConfig = function(url, debug, rewrite) {
+ Inject configuration from URL
+ @url {String}
+ @debug {Boolean} :: optional, is debug configuration
+ @rewrite {Boolean} :: optional (default true), rewrite all values or append new values only
+ return {Framework}
+ */
+Framework.prototype.injectConfig = function (url, debug, rewrite) {
 
     var self = this;
 
-    if (typeof(debug) !== UNDEFINED && self.config.debug !== debug)
+    if (typeof(debug) !== consts.UNDEFINED && self.config.debug !== debug)
         return self;
 
-    if (typeof(rewrite) === UNDEFINED)
+    if (typeof(rewrite) === consts.UNDEFINED)
         rewrite = true;
 
-    utils.request(url, 'GET', '', function(error, data) {
+    utils.request(url, 'GET', '', function (error, data) {
 
         if (error) {
             self.error(error, 'injectConfig - ' + url, null);
@@ -1309,19 +1150,19 @@ Framework.prototype.injectConfig = function(url, debug, rewrite) {
 };
 
 /*
-    Inject versions mapping
-    @url {String}
-    @rewrite {Boolean} :: optional (default true), rewrite all values or append (+ rewrite old) values (default false)
-    return {Framework}
-*/
-Framework.prototype.injectVersions = function(url, rewrite) {
+ Inject versions mapping
+ @url {String}
+ @rewrite {Boolean} :: optional (default true), rewrite all values or append (+ rewrite old) values (default false)
+ return {Framework}
+ */
+Framework.prototype.injectVersions = function (url, rewrite) {
 
     var self = this;
 
-    if (typeof(rewrite) === UNDEFINED)
+    if (typeof(rewrite) === consts.UNDEFINED)
         rewrite = false;
 
-    utils.request(url, 'GET', '', function(error, data) {
+    utils.request(url, 'GET', '', function (error, data) {
 
         if (error) {
             self.error(error, 'injectVersions - ' + url, null);
@@ -1336,17 +1177,16 @@ Framework.prototype.injectVersions = function(url, rewrite) {
 };
 
 /*
-    Inject module from URL
-    @name {String} :: name of module
-    @url {String}
-    return {Framework}
-*/
-Framework.prototype.injectModule = function(name, url) {
+ Inject module from URL
+ @name {String} :: name of module
+ @url {String}
+ return {Framework}
+ */
+Framework.prototype.injectModule = function (name, url) {
 
     var self = this;
-    var framework = self;
 
-    utils.request(url, 'GET', '', function(error, data) {
+    utils.request(url, 'GET', '', function (error, data) {
 
         if (error) {
             self.error(error, 'injectModule - ' + name, null);
@@ -1357,19 +1197,19 @@ Framework.prototype.injectModule = function(name, url) {
             var result = eval('(new (function(){var module = this;var exports = {};this.exports=exports;' + data + '})).exports');
             _controller = '#module-' + name;
 
-            self.routes.web = self.routes.web.remove(function(route) {
+            self.routes.web = self.routes.web.remove(function (route) {
                 return route.name === _controller;
             });
 
-            self.routes.files = self.routes.files.remove(function(route) {
+            self.routes.files = self.routes.files.remove(function (route) {
                 return route.name === _controller;
             });
 
-            self.routes.websockets = self.routes.websockets.remove(function(route) {
+            self.routes.websockets = self.routes.websockets.remove(function (route) {
                 return route.name === _controller;
             });
 
-            if (typeof(result.install) !== UNDEFINED) {
+            if (typeof(result.install) !== consts.UNDEFINED) {
                 result.install(self, name);
                 self.routesSort();
             }
@@ -1386,17 +1226,17 @@ Framework.prototype.injectModule = function(name, url) {
 };
 
 /*
-    Inject model from URL
-    @name {String} :: name of model
-    @url {String}
-    return {Framework}
-*/
-Framework.prototype.injectModel = function(name, url) {
+ Inject model from URL
+ @name {String} :: name of model
+ @url {String}
+ return {Framework}
+ */
+Framework.prototype.injectModel = function (name, url) {
 
     var self = this;
     var framework = self;
 
-    utils.request(url, 'GET', '', function(error, data) {
+    utils.request(url, 'GET', '', function (error, data) {
 
         if (error) {
             self.error(error, 'injectModel - ' + name, null);
@@ -1416,17 +1256,17 @@ Framework.prototype.injectModel = function(name, url) {
 };
 
 /*
-    Inject source from URL
-    @name {String} :: name of source
-    @url {String}
-    return {Framework}
-*/
-Framework.prototype.injectSource = function(name, url) {
+ Inject source from URL
+ @name {String} :: name of source
+ @url {String}
+ return {Framework}
+ */
+Framework.prototype.injectSource = function (name, url) {
 
     var self = this;
     var framework = self;
 
-    utils.request(url, 'GET', '', function(error, data) {
+    utils.request(url, 'GET', '', function (error, data) {
 
         if (error) {
             self.error(error, 'injectSource - ' + name, null);
@@ -1445,16 +1285,16 @@ Framework.prototype.injectSource = function(name, url) {
     return self;
 };
 /*
-    Inject controller from URL
-    @name {String} :: name of controller
-    @url {String}
-    return {Framework}
-*/
-Framework.prototype.injectController = function(name, url) {
+ Inject controller from URL
+ @name {String} :: name of controller
+ @url {String}
+ return {Framework}
+ */
+Framework.prototype.injectController = function (name, url) {
 
     var self = this;
 
-    utils.request(url, 'GET', '', function(error, data) {
+    utils.request(url, 'GET', '', function (error, data) {
 
         if (error) {
             self.error(error, 'injectController - ' + name, null);
@@ -1465,19 +1305,19 @@ Framework.prototype.injectController = function(name, url) {
             var result = eval('(new (function(framework){var module = this;var exports = {};this.exports=exports;' + data + '})).exports');
             _controller = name;
 
-            self.routes.web = self.routes.web.remove(function(route) {
+            self.routes.web = self.routes.web.remove(function (route) {
                 return route.name === _controller;
             });
 
-            self.routes.files = self.routes.files.remove(function(route) {
+            self.routes.files = self.routes.files.remove(function (route) {
                 return route.name === _controller;
             });
 
-            self.routes.websockets = self.routes.websockets.remove(function(route) {
+            self.routes.websockets = self.routes.websockets.remove(function (route) {
                 return route.name === _controller;
             });
 
-            if (typeof(result.install) !== UNDEFINED) {
+            if (typeof(result.install) !== consts.UNDEFINED) {
                 result.install(self, name);
                 self.routesSort();
             }
@@ -1494,16 +1334,16 @@ Framework.prototype.injectController = function(name, url) {
 };
 
 /*
-    Inject definition from URL
-    @url {String}
-    return {Framework}
-*/
-Framework.prototype.injectDefinition = function(url) {
+ Inject definition from URL
+ @url {String}
+ return {Framework}
+ */
+Framework.prototype.injectDefinition = function (url) {
 
     var self = this;
     var framework = self;
 
-    utils.request(url, 'GET', '', function(error, data) {
+    utils.request(url, 'GET', '', function (error, data) {
 
         if (error) {
             self.error(error, 'injectDefinition - ' + url, null);
@@ -1521,16 +1361,16 @@ Framework.prototype.injectDefinition = function(url) {
 };
 
 /*
-    Inject definition from URL
-    @url {String}
-    return {Framework}
-*/
-Framework.prototype.injectComponent = function(name, url) {
+ Inject definition from URL
+ @url {String}
+ return {Framework}
+ */
+Framework.prototype.injectComponent = function (name, url) {
 
     var self = this;
     var framework = self;
 
-    utils.request(url, 'GET', '', function(error, data) {
+    utils.request(url, 'GET', '', function (error, data) {
 
         if (error) {
             self.error(error, 'injectComponent - ' + name, null);
@@ -1540,7 +1380,7 @@ Framework.prototype.injectComponent = function(name, url) {
         try {
             var result = eval('(new (function(){var module = this;var exports = {};this.exports=exports;' + data + '})).exports');
 
-            if (typeof(result.install) !== UNDEFINED)
+            if (typeof(result.install) !== consts.UNDEFINED)
                 result.install(self, name);
 
             self.components[name] = result;
@@ -1559,12 +1399,12 @@ Framework.prototype.injectComponent = function(name, url) {
  * @param  {String or Function} script Function to eval or Code or URL address.
  * @return {Framework}
  */
-Framework.prototype.eval = function(script) {
+Framework.prototype.eval = function (script) {
 
     var self = this;
     var framework = self;
 
-    if (typeof(script) === FUNCTION) {
+    if (typeof(script) === consts.FUNCTION) {
         try {
             eval('(' + script.toString() + ')()');
         } catch (ex) {
@@ -1574,7 +1414,7 @@ Framework.prototype.eval = function(script) {
     }
 
     if ((script.startsWith('http://', true) || script.startsWith('https://', true)) && scripts.trim().indexOf('\n') === -1) {
-        utils.request(script, 'GET', '', function(err, data) {
+        utils.request(script, 'GET', '', function (err, data) {
 
             if (!err) {
                 // recursive calling
@@ -1595,61 +1435,61 @@ Framework.prototype.eval = function(script) {
 };
 
 /*
-    Error Handler
-    @err {Error}
-    @name {String} :: name of Controller (optional)
-    @uri {Uri} :: optional
-*/
-Framework.prototype.onError = function(err, name, uri) {
+ Error Handler
+ @err {Error}
+ @name {String} :: name of Controller (optional)
+ @uri {Uri} :: optional
+ */
+Framework.prototype.onError = function (err, name, uri) {
     console.log((name ? name : ': ') + err.toString() + (uri ? ' (' + uri.toString() + ')' : ''), err.stack);
     console.log('--------------------------------------------------------------------');
     return this;
 };
 
 /*
-    Pre-request handler
-    @req {ServerRequest}
-    @res {ServerResponse}
-    return {Boolean}
-*/
+ Pre-request handler
+ @req {ServerRequest}
+ @res {ServerResponse}
+ return {Boolean}
+ */
 Framework.prototype.onRequest = null;
 
 /*
-    Authorization handler
-    @req {ServerRequest}
-    @res {ServerResponse} OR {WebSocketClient}
-    @flags {String array}
-    @callback {Function} - @callback(Boolean), true is [authorize]d and false is [unauthorize]d
-*/
+ Authorization handler
+ @req {ServerRequest}
+ @res {ServerResponse} OR {WebSocketClient}
+ @flags {String array}
+ @callback {Function} - @callback(Boolean), true is [authorize]d and false is [unauthorize]d
+ */
 Framework.prototype.onAuthorization = null;
 
 /*
-    Prefix delegate
-    @req {ServerRequest}
-    return {String} :: return prefix (default return empty string)
-*/
+ Prefix delegate
+ @req {ServerRequest}
+ return {String} :: return prefix (default return empty string)
+ */
 Framework.prototype.onPrefix = null;
 
 /*
-    Versioning static files (this delegate call LESS CSS by the background property)
-    @name {String} :: name of static file (style.css or script.js)
-    return {String} :: return new name of static file (style-new.css or script-new.js)
-*/
+ Versioning static files (this delegate call LESS CSS by the background property)
+ @name {String} :: name of static file (style.css or script.js)
+ return {String} :: return new name of static file (style-new.css or script-new.js)
+ */
 Framework.prototype.onVersion = null;
 
 /*
-    Global framework validation
-    @name {String}
-    @value {String}
-    return {Boolean or utils.isValid() or StringErrorMessage};
-*/
+ Global framework validation
+ @name {String}
+ @value {String}
+ return {Boolean or utils.isValid() or StringErrorMessage};
+ */
 Framework.prototype.onValidation = null;
 
 /**
  * Mail handler
  * @type {Function(address, subject, body, callback)}
  */
-Framework.prototype.onMail = function(address, subject, body, callback) {
+Framework.prototype.onMail = function (address, subject, body, callback) {
 
     var message = Mail.create(subject, body);
 
@@ -1686,11 +1526,11 @@ Framework.prototype.onMail = function(address, subject, body, callback) {
 };
 
 /*
-    Validate request data
-    @data {String}
-    return {Boolean}
-*/
-Framework.prototype.onXSS = function(data) {
+ Validate request data
+ @data {String}
+ return {Boolean}
+ */
+Framework.prototype.onXSS = function (data) {
 
     if (data === null || data.length === 0)
         return false;
@@ -1700,14 +1540,14 @@ Framework.prototype.onXSS = function(data) {
 };
 
 /*
-    Render HTML for views
-    @argument {String params}
+ Render HTML for views
+ @argument {String params}
 
-    this === controller
+ this === controller
 
-    return {String}
-*/
-Framework.prototype.onMeta = function() {
+ return {String}
+ */
+Framework.prototype.onMeta = function () {
 
     var self = this;
     var builder = '';
@@ -1741,7 +1581,7 @@ Framework.prototype.onMeta = function() {
 };
 
 // @arguments {Object params}
-Framework.prototype.log = function() {
+Framework.prototype.log = function () {
 
     var self = this;
     var now = new Date();
@@ -1759,11 +1599,11 @@ Framework.prototype.log = function() {
 };
 
 /*
-    Return string of framework usage information
-    @detailed {Boolean} :: default (false)
-    return {String}
-*/
-Framework.prototype.usage = function(detailed) {
+ Return string of framework usage information
+ @detailed {Boolean} :: default (false)
+ return {String}
+ */
+Framework.prototype.usage = function (detailed) {
     var self = this;
     var memory = process.memoryUsage();
     var cache = Object.keys(self.cache.repository);
@@ -1841,17 +1681,17 @@ Framework.prototype.usage = function(detailed) {
 
     output.controllers = [];
 
-    controllers.forEach(function(o) {
+    controllers.forEach(function (o) {
         var item = self.controllers[o];
         output.controllers.push({
             name: o,
-            usage: typeof(item.usage) === UNDEFINED ? null : item.usage()
+            usage: typeof(item.usage) === consts.UNDEFINED ? null : item.usage()
         });
     });
 
     output.connections = [];
 
-    connections.forEach(function(o) {
+    connections.forEach(function (o) {
         output.connections.push({
             name: o,
             online: self.connections[o].online
@@ -1860,31 +1700,31 @@ Framework.prototype.usage = function(detailed) {
 
     output.modules = [];
 
-    modules.forEach(function(o) {
+    modules.forEach(function (o) {
         var item = self.modules[o];
         output.modules.push({
             name: o,
-            usage: typeof(item.usage) === UNDEFINED ? null : item.usage()
+            usage: typeof(item.usage) === consts.UNDEFINED ? null : item.usage()
         });
     });
 
     output.components = [];
 
-    components.forEach(function(o) {
+    components.forEach(function (o) {
         var item = self.components[o];
         output.components.push({
             name: o,
-            usage: typeof(item.usage) === UNDEFINED ? null : item.usage()
+            usage: typeof(item.usage) === consts.UNDEFINED ? null : item.usage()
         });
     });
 
     output.models = [];
 
-    models.forEach(function(o) {
+    models.forEach(function (o) {
         var item = self.models[o];
         output.models.push({
             name: o,
-            usage: typeof(item.usage) === UNDEFINED ? null : item.usage()
+            usage: typeof(item.usage) === consts.UNDEFINED ? null : item.usage()
         });
     });
 
@@ -1899,28 +1739,28 @@ Framework.prototype.usage = function(detailed) {
 };
 
 /*
-    3rd CSS compiler (Sync)
-    @filename {String}
-    @content {String} :: Content of CSS file
-    return {String}
-*/
+ 3rd CSS compiler (Sync)
+ @filename {String}
+ @content {String} :: Content of CSS file
+ return {String}
+ */
 Framework.prototype.onCompileCSS = null;
 
 /*
-    3rd JavaScript compiler (Sync)
-    @filename {String}
-    @content {String} :: Content of JavaScript file
-    return {String}
-*/
+ 3rd JavaScript compiler (Sync)
+ @filename {String}
+ @content {String} :: Content of JavaScript file
+ return {String}
+ */
 Framework.prototype.onCompileJS = null;
 
 /*
-    Compile JavaScript and CSS
-    @req {ServerRequest}
-    @filename {String}
-    return {String or NULL};
-*/
-Framework.prototype.compileStatic = function(req, filename) {
+ Compile JavaScript and CSS
+ @req {ServerRequest}
+ @filename {String}
+ return {String or NULL};
+ */
+Framework.prototype.compileStatic = function (req, filename) {
 
     if (!fs.existsSync(filename))
         return null;
@@ -1928,10 +1768,10 @@ Framework.prototype.compileStatic = function(req, filename) {
     var self = this;
     var index = filename.lastIndexOf('.');
     var ext = filename.substring(index).toLowerCase();
-    var output = fs.readFileSync(filename).toString(ENCODING);
+    var output = fs.readFileSync(filename).toString(consts.ENCODING);
 
     switch (ext) {
-        case EXTENSION_JS:
+        case consts.EXTENSION_JS:
             output = self.config['allow-compile-js'] ? self.onCompileJS === null ? internal.compile_javascript(output) : self.onCompileJS(filename, output) : output;
             break;
 
@@ -1939,7 +1779,7 @@ Framework.prototype.compileStatic = function(req, filename) {
             output = self.config['allow-compile-css'] ? self.onCompileCSS === null ? internal.compile_css(output) : self.onCompileCSS(filename, output) : output;
             var matches = output.match(/url\(.*?\)/g);
             if (matches !== null) {
-                matches.forEach(function(o) {
+                matches.forEach(function (o) {
                     var url = o.substring(4, o.length - 1);
                     output = output.replace(o, 'url(' + self._version(url) + ')');
                 });
@@ -1957,12 +1797,12 @@ Framework.prototype.compileStatic = function(req, filename) {
 };
 
 /*
-    Serve static files
-    @req {ServerRequest}
-    @res {ServerResponse}
-    return {Framework}
-*/
-Framework.prototype.responseStatic = function(req, res) {
+ Serve static files
+ @req {ServerRequest}
+ @res {ServerResponse}
+ return {Framework}
+ */
+Framework.prototype.responseStatic = function (req, res) {
 
     var self = this;
 
@@ -1994,7 +1834,7 @@ Framework.prototype.responseStatic = function(req, res) {
         return self;
     }
 
-    self.responseImage(req, res, filename, function(image) {
+    self.responseImage(req, res, filename, function (image) {
 
         if (resizer.width || resizer.height) {
             if (resizer.width && resizer.height)
@@ -2009,7 +1849,7 @@ Framework.prototype.responseStatic = function(req, res) {
         if (resizer.blur)
             image.blur(typeof(resizer.blur) === 'number' ? resizer.blur : 1);
 
-        if (resizer.rotate && typeof(resizer.rotate) == NUMBER)
+        if (resizer.rotate && typeof(resizer.rotate) == consts.NUMBER)
             image.rotate(resizer.rotate);
 
         if (resizer.flop)
@@ -2034,7 +1874,7 @@ Framework.prototype.responseStatic = function(req, res) {
  * @param  {String / Request}  filename Filename or Request object.
  * @return {Boolean}
  */
-Framework.prototype.isProcessed = function(filename) {
+Framework.prototype.isProcessed = function (filename) {
 
     var self = this;
 
@@ -2048,7 +1888,7 @@ Framework.prototype.isProcessed = function(filename) {
         filename = utils.combine(self.config['directory-public'], decodeURIComponent(name));
     }
 
-    if (typeof(self.temporary.path[filename]) !== UNDEFINED)
+    if (typeof(self.temporary.path[filename]) !== consts.UNDEFINED)
         return true;
 
     return false;
@@ -2059,7 +1899,7 @@ Framework.prototype.isProcessed = function(filename) {
  * @param  {String / Request}  filename Filename or Request object.
  * @return {Boolean}
  */
-Framework.prototype.isProcessing = function(filename) {
+Framework.prototype.isProcessing = function (filename) {
 
     var self = this;
 
@@ -2074,7 +1914,7 @@ Framework.prototype.isProcessing = function(filename) {
     }
 
     var name = this.temporary.processing[filename];
-    if (typeof(self.temporary.processing[filename]) !== UNDEFINED)
+    if (typeof(self.temporary.processing[filename]) !== consts.UNDEFINED)
         return true;
     return false;
 };
@@ -2085,7 +1925,7 @@ Framework.prototype.isProcessing = function(filename) {
  * @param  {Response} res (optional) Response
  * @return {Framework}
  */
-Framework.prototype.noCache = function(req, res) {
+Framework.prototype.noCache = function (req, res) {
 
     req.noCache();
 
@@ -2105,7 +1945,7 @@ Framework.prototype.noCache = function(req, res) {
  * @param {String} key Path to file, internal.
  * @return {Framework}
  */
-Framework.prototype.responseFile = function(req, res, filename, downloadName, headers, key) {
+Framework.prototype.responseFile = function (req, res, filename, downloadName, headers, key) {
 
     var self = this;
 
@@ -2152,7 +1992,7 @@ Framework.prototype.responseFile = function(req, res, filename, downloadName, he
         return self;
     }
 
-    if (typeof(name) === UNDEFINED) {
+    if (typeof(name) === consts.UNDEFINED) {
 
         if (!fs.existsSync(filename)) {
 
@@ -2204,7 +2044,7 @@ Framework.prototype.responseFile = function(req, res, filename, downloadName, he
     var returnHeaders = {};
 
     returnHeaders['Accept-Ranges'] = 'bytes';
-    returnHeaders[RESPONSE_HEADER_CACHECONTROL] = 'public';
+    returnHeaders[consts.RESPONSE_HEADER_CACHECONTROL] = 'public';
     returnHeaders['Expires'] = new Date().add('d', 15);
     returnHeaders['Vary'] = 'Accept-Encoding';
 
@@ -2217,10 +2057,10 @@ Framework.prototype.responseFile = function(req, res, filename, downloadName, he
     if (etag.length > 0)
         returnHeaders['Etag'] = etag;
 
-    if (!returnHeaders[RESPONSE_HEADER_CONTENTTYPE])
-        returnHeaders[RESPONSE_HEADER_CONTENTTYPE] = utils.getContentType(extension);
+    if (!returnHeaders[consts.RESPONSE_HEADER_CONTENTTYPE])
+        returnHeaders[consts.RESPONSE_HEADER_CONTENTTYPE] = utils.getContentType(extension);
 
-    var compress = self.config['allow-gzip'] && REQUEST_COMPRESS_CONTENTTYPE.indexOf(returnHeaders[RESPONSE_HEADER_CONTENTTYPE]) !== -1;
+    var compress = self.config['allow-gzip'] && consts.REQUEST_COMPRESS_CONTENTTYPE.indexOf(returnHeaders[consts.RESPONSE_HEADER_CONTENTTYPE]) !== -1;
     var range = req.headers['range'] || '';
     var supportsGzip = accept.lastIndexOf('gzip') !== -1;
 
@@ -2264,16 +2104,16 @@ Framework.prototype.responseFile = function(req, res, filename, downloadName, he
 };
 
 /*
-    Response PIPE
-    @req {ServerRequest}
-    @res {ServerResponse}
-    @url {String}
-    @header {Object} :: optional
-    @timeout {Number} :: optional
-    @callback {Function} :: optional
-    return {Framework}
-*/
-Framework.prototype.responsePipe = function(req, res, url, headers, timeout, callback) {
+ Response PIPE
+ @req {ServerRequest}
+ @res {ServerResponse}
+ @url {String}
+ @header {Object} :: optional
+ @timeout {Number} :: optional
+ @callback {Function} :: optional
+ return {Framework}
+ */
+Framework.prototype.responsePipe = function (req, res, url, headers, timeout, callback) {
 
     var self = this;
 
@@ -2283,7 +2123,7 @@ Framework.prototype.responsePipe = function(req, res, url, headers, timeout, cal
     var uri = parser.parse(url);
     var h = {};
 
-    h[RESPONSE_HEADER_CACHECONTROL] = 'private';
+    h[consts.RESPONSE_HEADER_CACHECONTROL] = 'private';
 
     if (headers)
         utils.extend(h, headers, true);
@@ -2303,7 +2143,7 @@ Framework.prototype.responsePipe = function(req, res, url, headers, timeout, cal
     var connection = options.protocol === 'https:' ? https : http;
     var supportsGZIP = (req.headers['accept-encoding'] || '').lastIndexOf('gzip') !== -1;
 
-    var client = connection.get(options, function(response) {
+    var client = connection.get(options, function (response) {
 
         var contentType = response.headers['content-type'];
         var isGZIP = (response.headers['content-encoding'] || '').lastIndexOf('gzip') !== -1;
@@ -2313,7 +2153,7 @@ Framework.prototype.responsePipe = function(req, res, url, headers, timeout, cal
         if (attachment.length > 0)
             res.setHeader('Content-Disposition', attachment);
 
-        res.setHeader(RESPONSE_HEADER_CONTENTTYPE, contentType);
+        res.setHeader(consts.RESPONSE_HEADER_CONTENTTYPE, contentType);
         res.setHeader('Vary', 'Accept-Encoding');
 
         if (compress) {
@@ -2329,14 +2169,14 @@ Framework.prototype.responsePipe = function(req, res, url, headers, timeout, cal
     });
 
     if ((timeout || 0) > 0) {
-        client.setTimeout(timeout || 3000, function() {
+        client.setTimeout(timeout || 3000, function () {
             self.response408(req, res);
             if (callback)
                 callback();
         });
     }
 
-    client.on('close', function() {
+    client.on('close', function () {
 
         if (res.success)
             return;
@@ -2359,11 +2199,11 @@ Framework.prototype.responsePipe = function(req, res, url, headers, timeout, cal
 };
 
 /*
-    Response custom
-    @req {ServerRequest}
-    @res {ServerResponse}
-*/
-Framework.prototype.responseCustom = function(req, res) {
+ Response custom
+ @req {ServerRequest}
+ @res {ServerResponse}
+ */
+Framework.prototype.responseCustom = function (req, res) {
 
     var self = this;
 
@@ -2383,21 +2223,21 @@ Framework.prototype.responseCustom = function(req, res) {
 };
 
 /*
-    Response image
-    @req {ServerRequest}
-    @res {ServerResponse}
-    @filename {String or Stream}
-    @fnProcess {Function} :: function(FrameworkImage) {}
-    @headers {Object} :: optional, additional headers
-    @useImageMagick {Boolean} :: optional, use ImageMagick (otherwise is used GraphicsMagick), default false
-    return {Framework}
-*/
-Framework.prototype.responseImage = function(req, res, filename, fnProcess, headers, useImageMagick) {
+ Response image
+ @req {ServerRequest}
+ @res {ServerResponse}
+ @filename {String or Stream}
+ @fnProcess {Function} :: function(FrameworkImage) {}
+ @headers {Object} :: optional, additional headers
+ @useImageMagick {Boolean} :: optional, use ImageMagick (otherwise is used GraphicsMagick), default false
+ return {Framework}
+ */
+Framework.prototype.responseImage = function (req, res, filename, fnProcess, headers, useImageMagick) {
 
     var self = this;
     var stream = null;
 
-    if (typeof(filename) === OBJECT)
+    if (typeof(filename) === consts.OBJECT)
         stream = filename;
 
     var key = 'image-' + req.url.substring(1);
@@ -2408,13 +2248,13 @@ Framework.prototype.responseImage = function(req, res, filename, fnProcess, head
         return self;
     }
 
-    if (typeof(name) !== UNDEFINED) {
+    if (typeof(name) !== consts.UNDEFINED) {
         self.responseFile(req, res, filename, '', headers, key);
         return self;
     }
 
     var im = useImageMagick;
-    if (typeof(im) === UNDEFINED)
+    if (typeof(im) === consts.UNDEFINED)
         im = self.config['default-image-converter'] === 'im';
 
     if (self.isProcessing(key)) {
@@ -2427,7 +2267,7 @@ Framework.prototype.responseImage = function(req, res, filename, fnProcess, head
 
         req.processing += 500;
 
-        setTimeout(function() {
+        setTimeout(function () {
             self.responseImage(req, res, filename, fnProcess, headers, im);
         }, 500);
 
@@ -2442,7 +2282,7 @@ Framework.prototype.responseImage = function(req, res, filename, fnProcess, head
     // STREAM
     if (stream !== null) {
 
-        fs.exists(name, function(exist) {
+        fs.exists(name, function (exist) {
 
             if (exist) {
                 delete self.temporary.processing[key];
@@ -2460,7 +2300,7 @@ Framework.prototype.responseImage = function(req, res, filename, fnProcess, head
             if (extension.substring(1) !== image.outputType)
                 name = name.substring(0, name.lastIndexOf(extension)) + '.' + image.outputType;
 
-            image.save(name, function(err) {
+            image.save(name, function (err) {
 
                 delete self.temporary.processing[key];
 
@@ -2480,7 +2320,7 @@ Framework.prototype.responseImage = function(req, res, filename, fnProcess, head
     }
 
     // FILENAME
-    fs.exists(filename, function(exist) {
+    fs.exists(filename, function (exist) {
 
         if (!exist) {
             delete self.temporary.processing[key];
@@ -2499,7 +2339,7 @@ Framework.prototype.responseImage = function(req, res, filename, fnProcess, head
         if (extension.substring(1) !== image.outputType)
             name = name.substring(0, name.lastIndexOf(extension)) + '.' + image.outputType;
 
-        image.save(name, function(err) {
+        image.save(name, function (err) {
 
             delete self.temporary.processing[key];
 
@@ -2519,26 +2359,26 @@ Framework.prototype.responseImage = function(req, res, filename, fnProcess, head
 };
 
 /*
-    Response image
-    @req {ServerRequest}
-    @res {ServerResponse}
-    @filename {String or Stream}
-    @fnProcess {Function} :: function(FrameworkImage) {}
-    @headers {Object} :: optional, additional headers
-    @useImageMagick {Boolean} :: optional, use ImageMagick (otherwise is used GraphicsMagick), default false
-    return {Framework}
-*/
-Framework.prototype.responseImageWithoutCache = function(req, res, filename, fnProcess, headers, useImageMagick) {
+ Response image
+ @req {ServerRequest}
+ @res {ServerResponse}
+ @filename {String or Stream}
+ @fnProcess {Function} :: function(FrameworkImage) {}
+ @headers {Object} :: optional, additional headers
+ @useImageMagick {Boolean} :: optional, use ImageMagick (otherwise is used GraphicsMagick), default false
+ return {Framework}
+ */
+Framework.prototype.responseImageWithoutCache = function (req, res, filename, fnProcess, headers, useImageMagick) {
 
     var self = this;
     var stream = null;
 
-    if (typeof(filename) === OBJECT)
+    if (typeof(filename) === consts.OBJECT)
         stream = filename;
 
     var key = 'image-' + req.url.substring(1);
     var im = useImageMagick;
-    if (typeof(im) === UNDEFINED)
+    if (typeof(im) === consts.UNDEFINED)
         im = self.config['default-image-converter'] === 'im';
 
 
@@ -2552,7 +2392,7 @@ Framework.prototype.responseImageWithoutCache = function(req, res, filename, fnP
 
         req.processing += 500;
 
-        setTimeout(function() {
+        setTimeout(function () {
             self.responseImageWithoutCache(req, res, filename, fnProcess, headers, im);
         }, 500);
 
@@ -2570,7 +2410,7 @@ Framework.prototype.responseImageWithoutCache = function(req, res, filename, fnP
     }
 
     // FILENAME
-    fs.exists(filename, function(exist) {
+    fs.exists(filename, function (exist) {
 
         if (!exist) {
             self.response404(req, res);
@@ -2596,7 +2436,7 @@ Framework.prototype.responseImageWithoutCache = function(req, res, filename, fnP
  * @param  {Object} headers Optional
  * @return {Framework}
  */
-Framework.prototype.responseStream = function(req, res, contentType, stream, downloadName, headers) {
+Framework.prototype.responseStream = function (req, res, contentType, stream, downloadName, headers) {
 
     var self = this;
 
@@ -2608,11 +2448,11 @@ Framework.prototype.responseStream = function(req, res, contentType, stream, dow
     if (contentType.lastIndexOf('/') === -1)
         contentType = utils.getContentType(contentType);
 
-    var compress = self.config['allow-gzip'] && REQUEST_COMPRESS_CONTENTTYPE.indexOf(contentType) !== -1;
+    var compress = self.config['allow-gzip'] && consts.REQUEST_COMPRESS_CONTENTTYPE.indexOf(contentType) !== -1;
     var accept = req.headers['accept-encoding'] || '';
     var returnHeaders = {};
 
-    returnHeaders[RESPONSE_HEADER_CACHECONTROL] = 'public';
+    returnHeaders[consts.RESPONSE_HEADER_CACHECONTROL] = 'public';
     returnHeaders['Expires'] = new Date().add('d', 15);
     returnHeaders['Vary'] = 'Accept-Encoding';
 
@@ -2624,7 +2464,7 @@ Framework.prototype.responseStream = function(req, res, contentType, stream, dow
     if (downloadName.length > 0)
         returnHeaders['Content-Disposition'] = 'attachment; filename=' + encodeURIComponent(downloadName);
 
-    returnHeaders[RESPONSE_HEADER_CONTENTTYPE] = contentType;
+    returnHeaders[consts.RESPONSE_HEADER_CONTENTTYPE] = contentType;
 
     if (compress && accept.lastIndexOf('gzip') !== -1) {
 
@@ -2655,15 +2495,15 @@ Framework.prototype.responseStream = function(req, res, contentType, stream, dow
 };
 
 /*
-    Internal :: Response Range
-    @name {String}
-    @range {String}
-    @headers {Object}
-    @res {ServerResponse}
-    @req {ServerRequest}
-    return {Framework}
-*/
-Framework.prototype.responseRange = function(name, range, headers, req, res) {
+ Internal :: Response Range
+ @name {String}
+ @range {String}
+ @headers {Object}
+ @res {ServerResponse}
+ @req {ServerRequest}
+ return {Framework}
+ */
+Framework.prototype.responseRange = function (name, range, headers, req, res) {
 
     var self = this;
     var arr = range.replace(/bytes=/, '').split('-');
@@ -2707,20 +2547,20 @@ Framework.prototype.responseRange = function(name, range, headers, req, res) {
 };
 
 /*
-    Set last modified header or Etag
-    @req {ServerRequest}
-    @res {ServerResponse}
-    @value {String or Date}
+ Set last modified header or Etag
+ @req {ServerRequest}
+ @res {ServerResponse}
+ @value {String or Date}
 
-    if @value === {String} set ETag
-    if @value === {Date} set LastModified
+ if @value === {String} set ETag
+ if @value === {Date} set LastModified
 
-    return {Controller};
-*/
-Framework.prototype.setModified = function(req, res, value) {
+ return {Controller};
+ */
+Framework.prototype.setModified = function (req, res, value) {
 
     var self = this;
-    var isEtag = typeof(value) === STRING;
+    var isEtag = typeof(value) === consts.STRING;
 
     if (isEtag) {
         res.setHeader('Etag', value + ':' + self.config['etag-version']);
@@ -2734,39 +2574,39 @@ Framework.prototype.setModified = function(req, res, value) {
 };
 
 /*
-    Check if ETag or Last Modified has modified
-    @req {ServerRequest}
-    @res {ServerResponse}
-    @compare {String or Date}
-    @strict {Boolean} :: if strict then use equal date else use great than date (default: false)
+ Check if ETag or Last Modified has modified
+ @req {ServerRequest}
+ @res {ServerResponse}
+ @compare {String or Date}
+ @strict {Boolean} :: if strict then use equal date else use great than date (default: false)
 
-    if @compare === {String} compare if-none-match
-    if @compare === {Date} compare if-modified-since
+ if @compare === {String} compare if-none-match
+ if @compare === {Date} compare if-modified-since
 
-    this method automatically flush response (if not modified)
-    --> response 304
+ this method automatically flush response (if not modified)
+ --> response 304
 
-    return {Boolean};
-*/
-Framework.prototype.notModified = function(req, res, compare, strict) {
+ return {Boolean};
+ */
+Framework.prototype.notModified = function (req, res, compare, strict) {
 
     var self = this;
     var type = typeof(compare);
 
-    if (type === BOOLEAN) {
+    if (type === consts.BOOLEAN) {
         var tmp = compare;
         compare = strict;
         strict = tmp;
         type = typeof(compare);
     }
 
-    var isEtag = type === STRING;
+    var isEtag = type === consts.STRING;
 
     var val = req.headers[isEtag ? 'if-none-match' : 'if-modified-since'];
 
     if (isEtag) {
 
-        if (typeof(val) === UNDEFINED)
+        if (typeof(val) === consts.UNDEFINED)
             return false;
 
         var myetag = compare + ':' + self.config['etag-version'];
@@ -2776,10 +2616,10 @@ Framework.prototype.notModified = function(req, res, compare, strict) {
 
     } else {
 
-        if (typeof(val) === UNDEFINED)
+        if (typeof(val) === consts.UNDEFINED)
             return false;
 
-        var date = typeof(compare) === UNDEFINED ? new Date().toUTCString() : compare.toUTCString();
+        var date = typeof(compare) === consts.UNDEFINED ? new Date().toUTCString() : compare.toUTCString();
 
 
         if (strict) {
@@ -2805,12 +2645,12 @@ Framework.prototype.notModified = function(req, res, compare, strict) {
 };
 
 /*
-    Response with 400 error
-    @req {ServerRequest}
-    @res {ServerResponse}
-    return {Framework}
-*/
-Framework.prototype.response400 = function(req, res) {
+ Response with 400 error
+ @req {ServerRequest}
+ @res {ServerResponse}
+ return {Framework}
+ */
+Framework.prototype.response400 = function (req, res) {
     var self = this;
 
     if (res.success)
@@ -2823,7 +2663,7 @@ Framework.prototype.response400 = function(req, res) {
 
     var headers = {};
     var status = 400;
-    headers[RESPONSE_HEADER_CONTENTTYPE] = CONTENTTYPE_TEXTPLAIN;
+    headers[consts.RESPONSE_HEADER_CONTENTTYPE] = consts.CONTENTTYPE_TEXTPLAIN;
     res.writeHead(status, headers);
     res.end(utils.httpStatus(status));
 
@@ -2835,12 +2675,12 @@ Framework.prototype.response400 = function(req, res) {
 };
 
 /*
-    Response with 401 error
-    @req {ServerRequest}
-    @res {ServerResponse}
-    return {Framework}
-*/
-Framework.prototype.response401 = function(req, res) {
+ Response with 401 error
+ @req {ServerRequest}
+ @res {ServerResponse}
+ return {Framework}
+ */
+Framework.prototype.response401 = function (req, res) {
     var self = this;
 
     if (res.success)
@@ -2852,7 +2692,7 @@ Framework.prototype.response401 = function(req, res) {
     res.success = true;
     var headers = {};
     var status = 401;
-    headers[RESPONSE_HEADER_CONTENTTYPE] = CONTENTTYPE_TEXTPLAIN;
+    headers[consts.RESPONSE_HEADER_CONTENTTYPE] = consts.CONTENTTYPE_TEXTPLAIN;
     res.writeHead(status, headers);
     res.end(utils.httpStatus(status));
 
@@ -2864,12 +2704,12 @@ Framework.prototype.response401 = function(req, res) {
 };
 
 /*
-    Response with 403 error
-    @req {ServerRequest}
-    @res {ServerResponse}
-    return {Framework}
-*/
-Framework.prototype.response403 = function(req, res) {
+ Response with 403 error
+ @req {ServerRequest}
+ @res {ServerResponse}
+ return {Framework}
+ */
+Framework.prototype.response403 = function (req, res) {
     var self = this;
 
     if (res.success)
@@ -2881,7 +2721,7 @@ Framework.prototype.response403 = function(req, res) {
     res.success = true;
     var headers = {};
     var status = 403;
-    headers[RESPONSE_HEADER_CONTENTTYPE] = CONTENTTYPE_TEXTPLAIN;
+    headers[consts.RESPONSE_HEADER_CONTENTTYPE] = consts.CONTENTTYPE_TEXTPLAIN;
     res.writeHead(status, headers);
     res.end(utils.httpStatus(status));
 
@@ -2893,12 +2733,12 @@ Framework.prototype.response403 = function(req, res) {
 };
 
 /*
-    Response with 404 error
-    @req {ServerRequest}
-    @res {ServerResponse}
-    return {Framework}
-*/
-Framework.prototype.response404 = function(req, res) {
+ Response with 404 error
+ @req {ServerRequest}
+ @res {ServerResponse}
+ return {Framework}
+ */
+Framework.prototype.response404 = function (req, res) {
     var self = this;
 
     if (res.success)
@@ -2910,7 +2750,7 @@ Framework.prototype.response404 = function(req, res) {
     res.success = true;
     var headers = {};
     var status = 404;
-    headers[RESPONSE_HEADER_CONTENTTYPE] = CONTENTTYPE_TEXTPLAIN;
+    headers[consts.RESPONSE_HEADER_CONTENTTYPE] = consts.CONTENTTYPE_TEXTPLAIN;
     res.writeHead(status, headers);
     res.end(utils.httpStatus(status));
 
@@ -2922,12 +2762,12 @@ Framework.prototype.response404 = function(req, res) {
 };
 
 /*
-    Response with 408 error
-    @req {ServerRequest}
-    @res {ServerResponse}
-    return {Framework}
-*/
-Framework.prototype.response408 = function(req, res) {
+ Response with 408 error
+ @req {ServerRequest}
+ @res {ServerResponse}
+ return {Framework}
+ */
+Framework.prototype.response408 = function (req, res) {
     var self = this;
 
     if (res.success)
@@ -2939,7 +2779,7 @@ Framework.prototype.response408 = function(req, res) {
 
     var headers = {};
     var status = 408;
-    headers[RESPONSE_HEADER_CONTENTTYPE] = CONTENTTYPE_TEXTPLAIN;
+    headers[consts.RESPONSE_HEADER_CONTENTTYPE] = consts.CONTENTTYPE_TEXTPLAIN;
     res.writeHead(status, headers);
     res.end(utils.httpStatus(status));
 
@@ -2951,12 +2791,12 @@ Framework.prototype.response408 = function(req, res) {
 };
 
 /*
-    Response with 431 error
-    @req {ServerRequest}
-    @res {ServerResponse}
-    return {Framework}
-*/
-Framework.prototype.response431 = function(req, res) {
+ Response with 431 error
+ @req {ServerRequest}
+ @res {ServerResponse}
+ return {Framework}
+ */
+Framework.prototype.response431 = function (req, res) {
     var self = this;
 
     if (res.success)
@@ -2968,7 +2808,7 @@ Framework.prototype.response431 = function(req, res) {
     res.success = true;
     var headers = {};
     var status = 431;
-    headers[RESPONSE_HEADER_CONTENTTYPE] = CONTENTTYPE_TEXTPLAIN;
+    headers[consts.RESPONSE_HEADER_CONTENTTYPE] = consts.CONTENTTYPE_TEXTPLAIN;
     res.writeHead(status, headers);
     res.end(utils.httpStatus(status));
 
@@ -2980,13 +2820,13 @@ Framework.prototype.response431 = function(req, res) {
 };
 
 /*
-    Response with 500 error
-    @req {ServerRequest}
-    @res {ServerResponse}
-    @error {Error}
-    return {Framework}
-*/
-Framework.prototype.response500 = function(req, res, error) {
+ Response with 500 error
+ @req {ServerRequest}
+ @res {ServerResponse}
+ @error {Error}
+ return {Framework}
+ */
+Framework.prototype.response500 = function (req, res, error) {
     var self = this;
 
     if (res.success)
@@ -3001,7 +2841,7 @@ Framework.prototype.response500 = function(req, res, error) {
     res.success = true;
     var headers = {};
     var status = 500;
-    headers[RESPONSE_HEADER_CONTENTTYPE] = CONTENTTYPE_TEXTPLAIN;
+    headers[consts.RESPONSE_HEADER_CONTENTTYPE] = consts.CONTENTTYPE_TEXTPLAIN;
     res.writeHead(status, headers);
     res.end(utils.httpStatus(status));
 
@@ -3013,12 +2853,12 @@ Framework.prototype.response500 = function(req, res, error) {
 };
 
 /*
-    Response with 501 error
-    @req {ServerRequest}
-    @res {ServerResponse}
-    return {Framework}
-*/
-Framework.prototype.response501 = function(req, res) {
+ Response with 501 error
+ @req {ServerRequest}
+ @res {ServerResponse}
+ return {Framework}
+ */
+Framework.prototype.response501 = function (req, res) {
     var self = this;
 
     if (res.success)
@@ -3031,7 +2871,7 @@ Framework.prototype.response501 = function(req, res) {
     var headers = {};
     var status = 501;
 
-    headers[RESPONSE_HEADER_CONTENTTYPE] = CONTENTTYPE_TEXTPLAIN;
+    headers[consts.RESPONSE_HEADER_CONTENTTYPE] = consts.CONTENTTYPE_TEXTPLAIN;
     res.writeHead(status, headers);
     res.end(utils.httpStatus(status));
 
@@ -3043,17 +2883,17 @@ Framework.prototype.response501 = function(req, res) {
 };
 
 /*
-    Response content
-    @req {ServerRequest}
-    @res {ServerResponse}
-    @code {Number}
-    @contentBody {String}
-    @contentType {String}
-    @compress {Boolean}
-    @headers {Object} :: optional key/value
-    return {Framework}
-*/
-Framework.prototype.responseContent = function(req, res, code, contentBody, contentType, compress, headers) {
+ Response content
+ @req {ServerRequest}
+ @res {ServerResponse}
+ @code {Number}
+ @contentBody {String}
+ @contentType {String}
+ @compress {Boolean}
+ @headers {Object} :: optional key/value
+ return {Framework}
+ */
+Framework.prototype.responseContent = function (req, res, code, contentBody, contentType, compress, headers) {
     var self = this;
 
     if (res.success)
@@ -3065,7 +2905,7 @@ Framework.prototype.responseContent = function(req, res, code, contentBody, cont
     var accept = req.headers['accept-encoding'] || '';
     var returnHeaders = {};
 
-    returnHeaders[RESPONSE_HEADER_CACHECONTROL] = 'private';
+    returnHeaders[consts.RESPONSE_HEADER_CACHECONTROL] = 'private';
     returnHeaders['Vary'] = 'Accept-Encoding';
 
     // možnosť odoslať vlastné hlavičky
@@ -3074,27 +2914,27 @@ Framework.prototype.responseContent = function(req, res, code, contentBody, cont
 
     // Safari resolve
     if (contentType === 'application/json')
-        returnHeaders[RESPONSE_HEADER_CACHECONTROL] = 'private, no-cache, no-store, must-revalidate';
+        returnHeaders[consts.RESPONSE_HEADER_CACHECONTROL] = 'private, no-cache, no-store, must-revalidate';
 
     // pridáme UTF-8 do hlavičky
     if ((/text|application/).test(contentType))
         contentType += '; charset=utf-8';
 
-    returnHeaders[RESPONSE_HEADER_CONTENTTYPE] = contentType;
+    returnHeaders[consts.RESPONSE_HEADER_CONTENTTYPE] = contentType;
 
     if (compress && accept.lastIndexOf('gzip') !== -1) {
-        zlib.gzip(new Buffer(contentBody), function(err, data) {
+        zlib.gzip(new Buffer(contentBody), function (err, data) {
 
             if (err) {
                 res.writeHead(code, returnHeaders);
-                res.end(contentBody, ENCODING);
+                res.end(contentBody, consts.ENCODING);
                 return;
             }
 
             returnHeaders['Content-Encoding'] = 'gzip';
 
             res.writeHead(code, returnHeaders);
-            res.end(data, ENCODING);
+            res.end(data, consts.ENCODING);
         });
 
         self._request_stats(false, req.isStaticFile);
@@ -3106,7 +2946,7 @@ Framework.prototype.responseContent = function(req, res, code, contentBody, cont
     }
 
     res.writeHead(code, returnHeaders);
-    res.end(contentBody, ENCODING);
+    res.end(contentBody, consts.ENCODING);
 
     self._request_stats(false, req.isStaticFile);
 
@@ -3117,14 +2957,14 @@ Framework.prototype.responseContent = function(req, res, code, contentBody, cont
 };
 
 /*
-    Internal function
-    @req {ServerRequest}
-    @res {ServerResponse}
-    @url {String}
-    @permanent {Boolean} :: optional
-    return {Framework}
-*/
-Framework.prototype.responseRedirect = function(req, res, url, permanent) {
+ Internal function
+ @req {ServerRequest}
+ @res {ServerResponse}
+ @url {String}
+ @permanent {Boolean} :: optional
+ return {Framework}
+ */
+Framework.prototype.responseRedirect = function (req, res, url, permanent) {
 
     var self = this;
 
@@ -3137,7 +2977,7 @@ Framework.prototype.responseRedirect = function(req, res, url, permanent) {
     res.success = true;
 
     var headers = { 'Location': url };
-    headers[RESPONSE_HEADER_CONTENTTYPE] = CONTENTTYPE_TEXTHTML + '; charset=utf-8';
+    headers[consts.RESPONSE_HEADER_CONTENTTYPE] = consts.CONTENTTYPE_TEXTHTML + '; charset=utf-8';
 
     res.writeHead(permanent ? 301 : 302, headers);
     res.end();
@@ -3155,7 +2995,7 @@ Framework.prototype.responseRedirect = function(req, res, url, permanent) {
  * @param  {Object} options
  * @return {Framework}
  */
-Framework.prototype.initialize = function(http, debug, options) {
+Framework.prototype.initialize = function (http, debug, options) {
 
     var self = this;
 
@@ -3169,14 +3009,14 @@ Framework.prototype.initialize = function(http, debug, options) {
     var ip = options.ip;
     var config = options.config || {};
 
-    self.isHTTPS = typeof(http.STATUS_CODES) === UNDEFINED;
+    self.isHTTPS = typeof(http.STATUS_CODES) === consts.UNDEFINED;
 
-    process.argv.forEach(function(name) {
+    process.argv.forEach(function (name) {
         if (name.toLowerCase().indexOf('coffee') !== -1)
             self.isCoffee = true;
     });
 
-    if (isNaN(port) && typeof(port) !== STRING)
+    if (isNaN(port) && typeof(port) !== consts.STRING)
         port = null;
 
     self.config.debug = debug;
@@ -3193,20 +3033,16 @@ Framework.prototype.initialize = function(http, debug, options) {
     self.install();
 
     if (options.https) {
-        self.server = http.createServer(options.https, function(req, res) {
+        self.server = http.createServer(options.https, function (req, res) {
             framework._request(req, res);
         });
     } else {
-        self.server = http.createServer(function(req, res) {
+        self.server = http.createServer(function (req, res) {
             framework._request(req, res);
         });
     }
 
-    if (self.config['allow-websocket']) {
-        self.server.on('upgrade', function(req, socket, head) {
-            framework._upgrade(req, socket, head);
-        });
-    }
+
 
     if (!port) {
         if (self.config['default-port'] === 'auto') {
@@ -3223,14 +3059,14 @@ Framework.prototype.initialize = function(http, debug, options) {
 
     if (ip !== null) {
         self.ip = ip || self.config['default-ip'] || '127.0.0.1';
-        if (self.ip === 'null' || self.ip === UNDEFINED || self.ip === 'auto')
+        if (self.ip === 'null' || self.ip === consts.UNDEFINED || self.ip === 'auto')
             self.ip = undefined;
     } else
         self.ip = undefined;
 
     self.server.listen(self.port, self.ip);
 
-    if (typeof(self.ip) === UNDEFINED || self.ip === null)
+    if (typeof(self.ip) === consts.UNDEFINED || self.ip === null)
         self.ip = 'auto';
 
     self.isLoaded = true;
@@ -3258,7 +3094,7 @@ Framework.prototype.initialize = function(http, debug, options) {
         return self;
     }
 
-    setTimeout(function() {
+    setTimeout(function () {
 
         if (framework.isTest)
             return;
@@ -3274,40 +3110,40 @@ Framework.prototype.initialize = function(http, debug, options) {
     return self;
 };
 
-Framework.prototype.run = function(http, config, port, ip, options) {
+Framework.prototype.run = function (http, config, port, ip, options) {
 
     console.log('OBSOLETE: please use for run framework.http("debug", [options([ip: String], [port: Number], [config: Object])]) or framework.http("release", [options([ip: String], [port: Number], [config: Object])]) or framework.http("test", [options([ip: String], [port: Number], [config: Object], tests: [String Array])])');
 
-    if (typeof(http) === STRING)
+    if (typeof(http) === consts.STRING)
         return this.mode(http, config, port, ip, options);
 
     var debug = false;
     var type = typeof(config);
 
-    if (type === BOOLEAN)
+    if (type === consts.BOOLEAN)
         debug = config;
-    else if (type === OBJECT) {
+    else if (type === consts.OBJECT) {
         debug = config.debug;
         options.config = config;
     }
 
     var self = this;
-    self.isHTTPS = typeof(http.STATUS_CODES) === UNDEFINED;
+    self.isHTTPS = typeof(http.STATUS_CODES) === consts.UNDEFINED;
 
-    if (isNaN(port) && typeof(port) !== STRING)
+    if (isNaN(port) && typeof(port) !== consts.STRING)
         port = null;
 
-    if (port !== null && typeof(port) === OBJECT) {
+    if (port !== null && typeof(port) === consts.OBJECT) {
         var tmp = options;
         options = port;
         port = tmp;
-    } else if (ip !== null && typeof(ip) === OBJECT) {
+    } else if (ip !== null && typeof(ip) === consts.OBJECT) {
         var tmp = options;
         options = ip;
         ip = tmp;
     }
 
-    if (typeof(options) === UNDEFINED)
+    if (typeof(options) === consts.UNDEFINED)
         options = {};
 
     options.ip = ip;
@@ -3322,9 +3158,9 @@ Framework.prototype.run = function(http, config, port, ip, options) {
  * @param  {Object} options Framework settings.
  * @return {Framework}
  */
-Framework.prototype.http = function(mode, options) {
+Framework.prototype.http = function (mode, options) {
 
-    if (typeof(options) === UNDEFINED)
+    if (typeof(options) === consts.UNDEFINED)
         options = {};
 
     if (!options.port)
@@ -3339,16 +3175,16 @@ Framework.prototype.http = function(mode, options) {
  * @param  {Object} options Framework settings.
  * @return {Framework}
  */
-Framework.prototype.https = function(mode, options) {
+Framework.prototype.https = function (mode, options) {
 
-    if (typeof(options) === UNDEFINED)
+    if (typeof(options) === consts.UNDEFINED)
         options = {};
 
     return this.mode(require('https'), mode, options);
 };
 
 // Alias for framework.init
-Framework.prototype.mode = function(http, name, options) {
+Framework.prototype.mode = function (http, name, options) {
 
     var test = false;
     var debug = false;
@@ -3386,7 +3222,7 @@ Framework.prototype.mode = function(http, name, options) {
     return self.initialize(http, debug, options);
 };
 
-Framework.prototype.console = function() {
+Framework.prototype.console = function () {
     console.log('====================================================');
     console.log('PID          : ' + process.pid);
     console.log('node.js      : ' + process.version);
@@ -3402,23 +3238,23 @@ Framework.prototype.console = function() {
     console.log('');
 };
 
-Framework.prototype.reconnect = function() {
+Framework.prototype.reconnect = function () {
     var self = this;
 
-    if (typeof(self.config['default-port']) !== UNDEFINED)
+    if (typeof(self.config['default-port']) !== consts.UNDEFINED)
         self.port = self.config['default-port'];
 
-    if (typeof(self.config['default-ip']) !== UNDEFINED)
+    if (typeof(self.config['default-ip']) !== consts.UNDEFINED)
         self.ip = self.config['default-ip'];
 
-    self.server.close(function() {
+    self.server.close(function () {
         self.server.listen(self.port, self.ip);
     });
 
     return self;
 };
 
-Framework.prototype._verify_directory = function(name) {
+Framework.prototype._verify_directory = function (name) {
 
     var self = this;
     var prop = '$directory-' + name;
@@ -3435,151 +3271,8 @@ Framework.prototype._verify_directory = function(name) {
     return self;
 };
 
-Framework.prototype._upgrade = function(req, socket, head) {
 
-    if ((req.headers.upgrade || '').toLowerCase() !== 'websocket')
-        return;
-
-    var self = this;
-    var headers = req.headers;
-
-    self.emit('websocket', req, socket, head);
-    self.stats.request.websocket++;
-
-    if (self.restrictions.isRestrictions) {
-        if (self.restrictions.isAllowedIP) {
-            if (self.restrictions.allowedIP.indexOf(req.ip) === -1) {
-                self.stats.response.restriction++;
-                req.connection.destroy();
-                return self;
-            }
-        }
-
-        if (self.restrictions.isBlockedIP) {
-            if (self.restrictions.blockedIP.indexOf(req.ip) !== -1) {
-                self.stats.response.restriction++;
-                req.connection.destroy();
-                return self;
-            }
-        }
-
-        if (self.restrictions.isAllowedCustom) {
-            if (!self.restrictions._allowedCustom(headers)) {
-                self.stats.response.restriction++;
-                req.connection.destroy();
-                return self;
-            }
-        }
-
-        if (self.restrictions.isBlockedCustom) {
-            if (self.restrictions._blockedCustom(headers)) {
-                self.stats.response.restriction++;
-                req.connection.destroy();
-                return self;
-            }
-        }
-    }
-
-    req.uri = parser.parse('ws://' + req.headers.host + req.url);
-    req.session = null;
-    req.user = null;
-    req.flags = [req.isSecure ? 'https' : 'http'];
-
-    var path = utils.path(req.uri.pathname);
-    var websocket = new WebSocketClient(req, socket, head);
-
-    req.path = internal.routeSplit(req.uri.pathname);
-
-    if (self.onAuthorization === null) {
-        var route = self.lookup_websocket(req, websocket.uri.pathname, true);
-
-        if (route === null) {
-            websocket.close();
-            req.connection.destroy();
-            return;
-        }
-
-        self._upgrade_continue(route, req, websocket, path);
-        return;
-    }
-
-    self.onAuthorization.call(self, req, websocket, req.flags, function(isLogged, user) {
-
-        if (user)
-            req.user = user;
-
-        req.flags.push(isLogged ? 'authorize' : 'unauthorize');
-
-        var route = self.lookup_websocket(req, websocket.uri.pathname, false);
-
-        if (route === null) {
-            websocket.close();
-            req.connection.destroy();
-            return;
-        }
-
-        self._upgrade_continue(route, req, websocket, path);
-    });
-
-};
-
-Framework.prototype._upgrade_continue = function(route, req, socket, path) {
-
-    var self = this;
-
-    if (!socket.prepare(route.flags, route.protocols, route.allow, route.length, self.version_header)) {
-        socket.close();
-        req.connection.destroy();
-        return self;
-    }
-
-    var id = path + (route.flags.length > 0 ? '#' + route.flags.join('-') : '');
-
-    if (route.isBINARY)
-        socket.type = 1;
-    else if (route.isJSON)
-        socket.type = 3;
-
-    var next = function() {
-
-        if (typeof(self.connections[id]) === UNDEFINED) {
-            var connection = new WebSocket(self, path, route.name, id);
-            self.connections[id] = connection;
-            route.onInitialize.apply(connection, internal.routeParam(route.param.length > 0 ? internal.routeSplit(req.uri.pathname, true) : req.path, route));
-        }
-
-        socket.upgrade(self.connections[id]);
-
-    };
-
-    if (route.middleware instanceof Array && route.middleware.length > 0) {
-
-        var func = [];
-
-        for (var i = 0, length = route.middleware.length; i < length; i++) {
-
-            var middleware = framework.routes.middleware[file.middleware[i]];
-
-            if (!middleware)
-                continue;
-
-            (function(middleware) {
-                func.push(function(next) {
-                    middleware.call(framework, req, res, next, route.options);
-                });
-            })(middleware);
-
-        }
-
-        func._async_middleware(res, next);
-
-    } else
-        next();
-
-    return self;
-};
-
-Framework.prototype._service = function(count) {
+Framework.prototype._service = function (count) {
     var self = this;
 
     if (self.config.debug)
@@ -3590,7 +3283,7 @@ Framework.prototype._service = function(count) {
         self.emit('clear', 'resources');
         self.resources = {};
 
-        if (typeof(gc) !== UNDEFINED)
+        if (typeof(gc) !== consts.UNDEFINED)
             gc();
     }
 
@@ -3605,7 +3298,7 @@ Framework.prototype._service = function(count) {
     self.emit('service', count);
 };
 
-Framework.prototype._request = function(req, res) {
+Framework.prototype._request = function (req, res) {
 
     var self = this;
 
@@ -3691,19 +3384,19 @@ Framework.prototype._request = function(req, res) {
             continue;
         }
 
-        (function(middleware) {
-            func.push(function(next) {
+        (function (middleware) {
+            func.push(function (next) {
                 middleware.call(framework, req, res, next);
             });
         })(middleware);
     }
 
-    func._async_middleware(res, function() {
+    func._async_middleware(res, function () {
         self._request_continue(req, res, headers, protocol);
     });
 };
 
-Framework.prototype._request_continue = function(req, res, headers, protocol) {
+Framework.prototype._request_continue = function (req, res, headers, protocol) {
 
     var self = this;
 
@@ -3845,7 +3538,7 @@ Framework.prototype._request_continue = function(req, res, headers, protocol) {
     return self;
 };
 
-Framework.prototype._request_stats = function(beg, isStaticFile) {
+Framework.prototype._request_stats = function (beg, isStaticFile) {
 
     var self = this;
 
@@ -3861,11 +3554,11 @@ Framework.prototype._request_stats = function(beg, isStaticFile) {
 };
 
 /*
-    Get a model
-    @name {String}
-    return {Object}
-*/
-Framework.prototype.model = function(name) {
+ Get a model
+ @name {String}
+ return {Object}
+ */
+Framework.prototype.model = function (name) {
     var self = this;
     var model = self.models[name];
 
@@ -3875,12 +3568,12 @@ Framework.prototype.model = function(name) {
     var filename = path.join(directory, self.config['directory-models'], name);
 
     if (self.isCoffee) {
-        if (fs.existsSync(filename + EXTENSION_COFFEE))
-            filename += EXTENSION_COFFEE;
+        if (fs.existsSync(filename + consts.EXTENSION_COFFEE))
+            filename += consts.EXTENSION_COFFEE;
         else
-            filename += EXTENSION_JS;
+            filename += consts.EXTENSION_JS;
     } else
-        filename += EXTENSION_JS;
+        filename += consts.EXTENSION_JS;
 
     model = require(filename);
     self.models[name] = model;
@@ -3888,11 +3581,11 @@ Framework.prototype.model = function(name) {
 };
 
 /*
-    Get a source
-    @name {String}
-    return {Object}
-*/
-Framework.prototype.source = function(name) {
+ Get a source
+ @name {String}
+ return {Object}
+ */
+Framework.prototype.source = function (name) {
     var self = this;
     var source = self.sources[name];
 
@@ -3902,12 +3595,12 @@ Framework.prototype.source = function(name) {
     var filename = path.join(directory, self.config['directory-source'], name);
 
     if (self.isCoffee) {
-        if (fs.existsSync(filename + EXTENSION_COFFEE))
-            filename += EXTENSION_COFFEE;
+        if (fs.existsSync(filename + consts.EXTENSION_COFFEE))
+            filename += consts.EXTENSION_COFFEE;
         else
-            filename += EXTENSION_JS;
+            filename += consts.EXTENSION_JS;
     } else
-        filename += EXTENSION_JS;
+        filename += consts.EXTENSION_JS;
 
     source = require(filename);
     self.sources[name] = source;
@@ -3925,13 +3618,13 @@ Framework.prototype.source = function(name) {
  * @param  {Object}            headers  Additional headers.
  * @return {Framework}
  */
-Framework.prototype.assert = function(name, url, flags, callback, data, cookies, headers) {
+Framework.prototype.assert = function (name, url, flags, callback, data, cookies, headers) {
 
     var self = this;
 
     // !IMPORTANT! framework.testsPriority is created dynamically in framework.test()
 
-    if (typeof(url) === FUNCTION) {
+    if (typeof(url) === consts.FUNCTION) {
         self.tests.push({
             name: _test + ': ' + name,
             priority: framework.testsPriority,
@@ -4028,9 +3721,9 @@ Framework.prototype.assert = function(name, url, flags, callback, data, cookies,
  * @param {Function} callback Callback.
  * @return {Framework}
  */
-Framework.prototype.testing = function(stop, callback) {
+Framework.prototype.testing = function (stop, callback) {
 
-    if (typeof(stop) === UNDEFINED)
+    if (typeof(stop) === consts.UNDEFINED)
         stop = true;
 
     // !IMPORTANT! framework.isTestError is created dynamically
@@ -4048,7 +3741,7 @@ Framework.prototype.testing = function(stop, callback) {
         return self;
     }
 
-    var logger = function(name, start, err) {
+    var logger = function (name, start, err) {
 
         var time = Math.floor(new Date() - start) + ' ms';
 
@@ -4069,7 +3762,7 @@ Framework.prototype.testing = function(stop, callback) {
         try {
 
             // Is used in: process.on('uncaughtException')
-            framework.testContinue = function(err) {
+            framework.testContinue = function (err) {
                 logger(key, beg, err);
 
                 if (err)
@@ -4080,7 +3773,7 @@ Framework.prototype.testing = function(stop, callback) {
                 self.testing(stop, callback);
             };
 
-            test.run.call(self, function() {
+            test.run.call(self, function () {
                 self.testContinue();
             }, key);
 
@@ -4093,15 +3786,15 @@ Framework.prototype.testing = function(stop, callback) {
         return self;
     }
 
-    var response = function(res) {
+    var response = function (res) {
 
         res._buffer = '';
 
-        res.on('data', function(chunk) {
-            this._buffer += chunk.toString(ENCODING);
+        res.on('data', function (chunk) {
+            this._buffer += chunk.toString(consts.ENCODING);
         });
 
-        res.on('end', function() {
+        res.on('end', function () {
 
             var cookie = res.headers['cookie'] || '';
             var cookies = {};
@@ -4135,11 +3828,11 @@ Framework.prototype.testing = function(stop, callback) {
 
     var options = parser.parse((test.url.indexOf('http://') > 0 || test.url.indexOf('https://') > 0 ? '' : 'http://' + self.ip + ':' + self.port) + test.url);
 
-    if (typeof(test.data) === FUNCTION)
+    if (typeof(test.data) === consts.FUNCTION)
         test.data = test.data();
 
-    if (typeof(test.data) !== STRING)
-        test.data = test.headers[RESPONSE_HEADER_CONTENTTYPE].indexOf('json') !== -1 ? JSON.stringify(test.data) : qs.stringify(test.data);
+    if (typeof(test.data) !== consts.STRING)
+        test.data = test.headers[consts.RESPONSE_HEADER_CONTENTTYPE].indexOf('json') !== -1 ? JSON.stringify(test.data) : qs.stringify(test.data);
 
     if (test.data && test.data.length > 0)
         test.headers[RESPONSE_HEADER_CONTENTLENGTH] = test.data.length;
@@ -4150,14 +3843,14 @@ Framework.prototype.testing = function(stop, callback) {
     var con = options.protocol === 'https:' ? https : http;
     var req = test.method === 'POST' || test.method === 'PUT' ? con.request(options, response) : con.get(options, response);
 
-    req.on('error', function(e) {
+    req.on('error', function (e) {
         logger(key, beg, e);
         self.testsNO++;
         self.testing(stop, callback);
     });
 
     if (test.data.length > 0)
-        req.end(test.data, ENCODING);
+        req.end(test.data, consts.ENCODING);
     else
         req.end();
 
@@ -4165,20 +3858,20 @@ Framework.prototype.testing = function(stop, callback) {
 };
 
 /*
-    Make a tests
-    @stop {Boolean} :: stop framework (default true)
-    @names {String array} :: only tests in names (optional)
-    @callback {Functions} :: on complete test handler (optional)
-    return {Framework}
-*/
-Framework.prototype.test = function(stop, names, cb) {
+ Make a tests
+ @stop {Boolean} :: stop framework (default true)
+ @names {String array} :: only tests in names (optional)
+ @callback {Functions} :: on complete test handler (optional)
+ return {Framework}
+ */
+Framework.prototype.test = function (stop, names, cb) {
 
     var self = this;
 
-    if (typeof(stop) === UNDEFINED)
+    if (typeof(stop) === consts.UNDEFINED)
         stop = true;
 
-    if (typeof(names) === FUNCTION) {
+    if (typeof(names) === consts.FUNCTION) {
         cb = names;
         names = [];
     } else
@@ -4191,7 +3884,7 @@ Framework.prototype.test = function(stop, names, cb) {
 
     if (!fs.existsSync(utils.combine(dir))) {
         if (cb) cb();
-        if (stop) setTimeout(function() {
+        if (stop) setTimeout(function () {
             framework.stop(0);
         }, 500);
         return self;
@@ -4199,7 +3892,7 @@ Framework.prototype.test = function(stop, names, cb) {
 
     self.configure('config-test', true);
 
-    var logger = function(name, start, err) {
+    var logger = function (name, start, err) {
 
         var time = Math.floor(new Date() - start) + ' ms';
 
@@ -4212,14 +3905,14 @@ Framework.prototype.test = function(stop, names, cb) {
         console.info('Passed '.padRight(20, '.') + ' ' + name + ' [' + time + ']');
     };
 
-    var results = function() {
+    var results = function () {
         if (framework.testsResults.length === 0)
             return;
 
         console.log('');
         console.log('====== RESULTS ======');
         console.log('');
-        framework.testsResults.forEach(function(fn) {
+        framework.testsResults.forEach(function (fn) {
             fn();
         });
     };
@@ -4233,12 +3926,12 @@ Framework.prototype.test = function(stop, names, cb) {
     if (!framework.testsNO)
         framework.testsNO = 0;
 
-    fs.readdirSync(utils.combine(dir)).forEach(function(name) {
+    fs.readdirSync(utils.combine(dir)).forEach(function (name) {
 
         var filename = path.join(directory, dir, name);
         var ext = path.extname(filename).toLowerCase();
 
-        if (ext !== EXTENSION_JS && ext !== EXTENSION_COFFEE)
+        if (ext !== consts.EXTENSION_JS && ext !== consts.EXTENSION_COFFEE)
             return;
 
         if (names.length > 0 && names.indexOf(name.substring(0, name.length - 3)) === -1)
@@ -4248,18 +3941,18 @@ Framework.prototype.test = function(stop, names, cb) {
         var beg = new Date();
 
         try {
-            var isRun = typeof(test.run) !== UNDEFINED;
-            var isInstall = typeof(test.isInstall) !== UNDEFINED;
-            var isInit = typeof(test.init) !== UNDEFINED;
-            var isLoad = typeof(test.load) !== UNDEFINED;
+            var isRun = typeof(test.run) !== consts.UNDEFINED;
+            var isInstall = typeof(test.isInstall) !== consts.UNDEFINED;
+            var isInit = typeof(test.init) !== consts.UNDEFINED;
+            var isLoad = typeof(test.load) !== consts.UNDEFINED;
 
             _test = name;
 
             if (test.disabled === true)
                 return;
 
-            if (typeof(test.order) === UNDEFINED)
-                framework.testsPriority = typeof(test.priority) === UNDEFINED ? self.tests.length : test.priority;
+            if (typeof(test.order) === consts.UNDEFINED)
+                framework.testsPriority = typeof(test.priority) === consts.UNDEFINED ? self.tests.length : test.priority;
             else
                 framework.testsPriority = test.priority;
 
@@ -4273,8 +3966,10 @@ Framework.prototype.test = function(stop, names, cb) {
                 test.load(self, name);
 
             if (test.usage) {
-                (function(test) {
-                    framework.testsResults.push(function() { test.usage(name); });
+                (function (test) {
+                    framework.testsResults.push(function () {
+                        test.usage(name);
+                    });
                 })(test);
             }
 
@@ -4297,14 +3992,14 @@ Framework.prototype.test = function(stop, names, cb) {
         if (!stop)
             return self;
 
-        setTimeout(function() {
+        setTimeout(function () {
             framework.stop(1);
         }, 500);
 
         return self;
     }
 
-    self.tests.sort(function(a, b) {
+    self.tests.sort(function (a, b) {
         if (a.priority > b.priority)
             return 1;
         if (a.priority < b.priority)
@@ -4319,10 +4014,10 @@ Framework.prototype.test = function(stop, names, cb) {
         return 0;
     });
 
-    setTimeout(function() {
+    setTimeout(function () {
         console.log('====== TESTING ======');
         console.log('');
-        self.testing(stop, function() {
+        self.testing(stop, function () {
 
             console.log('');
             console.log('Passed ...', framework.testsOK);
@@ -4341,10 +4036,10 @@ Framework.prototype.test = function(stop, names, cb) {
 };
 
 /*
-    Clear temporary directory
-    return {Framework}
-*/
-Framework.prototype.clear = function() {
+ Clear temporary directory
+ return {Framework}
+ */
+Framework.prototype.clear = function () {
 
     var self = this;
     var dir = utils.combine(self.config['directory-temp']);
@@ -4352,7 +4047,7 @@ Framework.prototype.clear = function() {
     if (!fs.existsSync(dir))
         return self;
 
-    fs.readdir(dir, function(err, files) {
+    fs.readdir(dir, function (err, files) {
         if (err)
             return;
 
@@ -4371,13 +4066,13 @@ Framework.prototype.clear = function() {
 };
 
 /*
-    INTERNAL: Force remove files
-    return {Framework}
-*/
-Framework.prototype.unlink = function(arr, callback) {
+ INTERNAL: Force remove files
+ return {Framework}
+ */
+Framework.prototype.unlink = function (arr, callback) {
     var self = this;
 
-    if (typeof(arr) === STRING)
+    if (typeof(arr) === consts.STRING)
         arr = [arr];
 
     if (arr.length === 0) {
@@ -4393,7 +4088,7 @@ Framework.prototype.unlink = function(arr, callback) {
         return;
     }
 
-    fs.unlink(filename, function() {
+    fs.unlink(filename, function () {
         self.unlink(arr, callback);
     });
 
@@ -4401,54 +4096,54 @@ Framework.prototype.unlink = function(arr, callback) {
 };
 
 /*
-    Cryptography (encrypt)
-    @value {String}
-    @key {String}
-    @isUniqe {Boolean} :: optional, default true
-    return {String}
-*/
-Framework.prototype.encrypt = function(value, key, isUnique) {
+ Cryptography (encrypt)
+ @value {String}
+ @key {String}
+ @isUniqe {Boolean} :: optional, default true
+ return {String}
+ */
+Framework.prototype.encrypt = function (value, key, isUnique) {
 
     var self = this;
     var type = typeof(value);
 
-    if (type === UNDEFINED)
+    if (type === consts.UNDEFINED)
         return '';
 
-    if (typeof(key) === BOOLEAN) {
+    if (typeof(key) === consts.BOOLEAN) {
         var tmp = isUnique;
         isUnique = key;
         key = tmp;
     }
 
-    if (type === FUNCTION)
+    if (type === consts.FUNCTION)
         value = value();
 
-    if (type === NUMBER)
+    if (type === consts.NUMBER)
         value = value.toString();
 
-    if (type === OBJECT)
+    if (type === consts.OBJECT)
         value = JSON.stringify(value);
 
     return value.encrypt(self.config.secret + '=' + key, isUnique);
 };
 
 /*
-    Cryptography (decrypt)
-    @value {String}
-    @key {String}
-    @jsonConvert {Boolean} :: optional (convert string to JSON)
-    return {String or Object}
-*/
-Framework.prototype.decrypt = function(value, key, jsonConvert) {
+ Cryptography (decrypt)
+ @value {String}
+ @key {String}
+ @jsonConvert {Boolean} :: optional (convert string to JSON)
+ return {String or Object}
+ */
+Framework.prototype.decrypt = function (value, key, jsonConvert) {
 
-    if (typeof(key) === BOOLEAN) {
+    if (typeof(key) === consts.BOOLEAN) {
         var tmp = jsonConvert;
         jsonConvert = key;
         key = tmp;
     }
 
-    if (typeof(jsonConvert) !== BOOLEAN)
+    if (typeof(jsonConvert) !== consts.BOOLEAN)
         jsonConvert = true;
 
     var self = this;
@@ -4467,34 +4162,34 @@ Framework.prototype.decrypt = function(value, key, jsonConvert) {
 };
 
 /*
-    Hash value
-    @type {String} :: sha1, sha256, sha512, md5
-    @value {Object}
-    @salt {String or Boolean} :: custom salt {String} or secret as salt {undefined or Boolean}
-    return {String}
-*/
-Framework.prototype.hash = function(type, value, salt) {
+ Hash value
+ @type {String} :: sha1, sha256, sha512, md5
+ @value {Object}
+ @salt {String or Boolean} :: custom salt {String} or secret as salt {undefined or Boolean}
+ return {String}
+ */
+Framework.prototype.hash = function (type, value, salt) {
     var hash = crypto.createHash(type);
     var plus = '';
 
-    if (typeof(salt) === STRING)
+    if (typeof(salt) === consts.STRING)
         plus = salt;
     else if (salt !== false)
         plus = (this.config.secret || '');
 
-    hash.update(value.toString() + plus, ENCODING);
+    hash.update(value.toString() + plus, consts.ENCODING);
     return hash.digest('hex');
 };
 
 /*
-    Resource reader
-    @name {String} :: filename of resource
-    @key {String}
-    return {String}
-*/
-Framework.prototype.resource = function(name, key) {
+ Resource reader
+ @name {String} :: filename of resource
+ @key {String}
+ return {String}
+ */
+Framework.prototype.resource = function (name, key) {
 
-    if (typeof(key) === UNDEFINED || name.length === 0) {
+    if (typeof(key) === consts.UNDEFINED || name.length === 0) {
         key = name;
         name = 'default';
     }
@@ -4502,7 +4197,7 @@ Framework.prototype.resource = function(name, key) {
     var self = this;
     var res = self.resources[name];
 
-    if (typeof(res) !== UNDEFINED)
+    if (typeof(res) !== consts.UNDEFINED)
         return res[key];
 
     var fileName = utils.combine(self.config['directory-resources'], name + '.resource');
@@ -4510,17 +4205,17 @@ Framework.prototype.resource = function(name, key) {
     if (!fs.existsSync(fileName))
         return '';
 
-    var obj = fs.readFileSync(fileName).toString(ENCODING).configuration();
+    var obj = fs.readFileSync(fileName).toString(consts.ENCODING).configuration();
     self.resources[name] = obj;
     return obj[key] || '';
 };
 
-Framework.prototype.configureMapping = function(content, rewrite) {
+Framework.prototype.configureMapping = function (content, rewrite) {
 
     var self = this;
     var filename = utils.combine('/', 'versions');
 
-    if (typeof(rewrite) === UNDEFINED)
+    if (typeof(rewrite) === consts.UNDEFINED)
         rewrite = true;
 
     if (!fs.existsSync(filename)) {
@@ -4528,7 +4223,7 @@ Framework.prototype.configureMapping = function(content, rewrite) {
         return;
     }
 
-    content = (typeof(content) !== STRING ? fs.readFileSync(filename).toString(ENCODING) : content);
+    content = (typeof(content) !== consts.STRING ? fs.readFileSync(filename).toString(consts.ENCODING) : content);
 
     if (content.length === 0) {
         self.versions = null;
@@ -4560,24 +4255,24 @@ Framework.prototype.configureMapping = function(content, rewrite) {
 };
 
 /*
-    INTERNAL: Framework configure
-    @arr {String Array or String (filename)} :: optional
-    @rewrite {Boolean} :: optional, default true
-    return {Framework}
-*/
-Framework.prototype.configure = function(arr, rewrite) {
+ INTERNAL: Framework configure
+ @arr {String Array or String (filename)} :: optional
+ @rewrite {Boolean} :: optional, default true
+ return {Framework}
+ */
+Framework.prototype.configure = function (arr, rewrite) {
 
     var self = this;
     var type = typeof(arr);
 
-    if (type === STRING) {
+    if (type === consts.STRING) {
         var filename = utils.combine('/', arr);
         if (!fs.existsSync(filename))
             return self;
-        arr = fs.readFileSync(filename).toString(ENCODING).split('\n');
+        arr = fs.readFileSync(filename).toString(consts.ENCODING).split('\n');
     }
 
-    if (type === UNDEFINED) {
+    if (type === consts.UNDEFINED) {
 
         var filenameA = utils.combine('/', 'config');
         var filenameB = utils.combine('/', 'config-' + (self.config.debug ? 'debug' : 'release'));
@@ -4585,10 +4280,10 @@ Framework.prototype.configure = function(arr, rewrite) {
         arr = [];
 
         if (fs.existsSync(filenameA) && fs.lstatSync(filenameA).isFile())
-            arr = arr.concat(fs.readFileSync(filenameA).toString(ENCODING).split('\n'));
+            arr = arr.concat(fs.readFileSync(filenameA).toString(consts.ENCODING).split('\n'));
 
         if (fs.existsSync(filenameB) && fs.lstatSync(filenameB).isFile())
-            arr = arr.concat(fs.readFileSync(filenameB).toString(ENCODING).split('\n'));
+            arr = arr.concat(fs.readFileSync(filenameB).toString(consts.ENCODING).split('\n'));
     }
 
     if (!arr instanceof Array)
@@ -4597,7 +4292,7 @@ Framework.prototype.configure = function(arr, rewrite) {
     if (arr.length === 0)
         return self;
 
-    if (typeof(rewrite) === UNDEFINED)
+    if (typeof(rewrite) === consts.UNDEFINED)
         rewrite = true;
 
     var obj = {};
@@ -4657,7 +4352,7 @@ Framework.prototype.configure = function(arr, rewrite) {
     process.title = 'total: ' + self.config.name.removeDiacritics().toLowerCase().replace(/\s/g, '-').substring(0, 8);
 
     if (accepts !== null && accepts.length > 0) {
-        accepts.forEach(function(accept) {
+        accepts.forEach(function (accept) {
             if (self.config['static-accepts'].indexOf(accept) === -1)
                 self.config['static-accepts'].push(accept);
         });
@@ -4671,25 +4366,25 @@ Framework.prototype.configure = function(arr, rewrite) {
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Framework.prototype.routeJS = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Framework.prototype.routeJS = function (name) {
     var self = this;
 
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
+    if (name.lastIndexOf(consts.EXTENSION_JS) === -1)
+        name += consts.EXTENSION_JS;
 
     return self._routeStatic(name, self.config['static-url-js']);
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Framework.prototype.routeCSS = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Framework.prototype.routeCSS = function (name) {
     var self = this;
 
     if (name.lastIndexOf('.css') === -1)
@@ -4699,71 +4394,71 @@ Framework.prototype.routeCSS = function(name) {
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Framework.prototype.routeImage = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Framework.prototype.routeImage = function (name) {
     var self = this;
     return self._routeStatic(name, self.config['static-url-image']);
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Framework.prototype.routeVideo = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Framework.prototype.routeVideo = function (name) {
     var self = this;
     return self._routeStatic(name, self.config['static-url-video']);
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Framework.prototype.routeFont = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Framework.prototype.routeFont = function (name) {
     var self = this;
     return self._routeStatic(name, self.config['static-url-font']);
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Framework.prototype.routeDownload = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Framework.prototype.routeDownload = function (name) {
     var self = this;
     return self._routeStatic(name, self.config['static-url-download']);
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Framework.prototype.routeStatic = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Framework.prototype.routeStatic = function (name) {
     var self = this;
     return self._routeStatic(name, self.config['static-url']);
 };
 
 /*
-    Internal static file routing
-    @name {String} :: filename
-    @directory {String} :: directory
-    return {String}
-*/
-Framework.prototype._routeStatic = function(name, directory) {
+ Internal static file routing
+ @name {String} :: filename
+ @directory {String} :: directory
+ return {String}
+ */
+Framework.prototype._routeStatic = function (name, directory) {
     return directory + this._version(name);
 };
 
 /*
-    Internal mapping function
-    @name {String} :: filename
-    return {String}
-*/
-Framework.prototype._version = function(name) {
+ Internal mapping function
+ @name {String} :: filename
+ return {String}
+ */
+Framework.prototype._version = function (name) {
     var self = this;
 
     if (self.versions !== null)
@@ -4776,14 +4471,14 @@ Framework.prototype._version = function(name) {
 };
 
 /*
-    Internal function
-    @req {HttpRequest}
-    @url {String}
-    @flags {String Array}
-    @noLoggedUnlogged {Boolean} :: optional, default false
-    return {ControllerRoute}
-*/
-Framework.prototype.lookup = function(req, url, flags, noLoggedUnlogged) {
+ Internal function
+ @req {HttpRequest}
+ @url {String}
+ @flags {String Array}
+ @noLoggedUnlogged {Boolean} :: optional, default false
+ return {ControllerRoute}
+ */
+Framework.prototype.lookup = function (req, url, flags, noLoggedUnlogged) {
 
     var self = this;
     var isSystem = url[0] === '#';
@@ -4833,58 +4528,14 @@ Framework.prototype.lookup = function(req, url, flags, noLoggedUnlogged) {
     return null;
 };
 
-/*
-    Internal function
-    @req {HttpRequest}
-    @url {String}
-    return {WebSocketRoute}
-*/
-Framework.prototype.lookup_websocket = function(req, url, noLoggedUnlogged) {
-
-    var self = this;
-    var subdomain = req.subdomain === null ? null : req.subdomain.join('.');
-    var length = self.routes.websockets.length;
-
-    for (var i = 0; i < length; i++) {
-
-        var route = self.routes.websockets[i];
-
-        if (!internal.routeCompareSubdomain(subdomain, route.subdomain))
-            continue;
-
-        if (route.isASTERIX) {
-            if (!internal.routeCompare(req.path, route.url, false, true))
-                continue;
-        } else {
-            if (!internal.routeCompare(req.path, route.url, false))
-                continue;
-        }
-
-        if (route.flags !== null && route.flags.length > 0) {
-
-            var result = internal.routeCompareFlags(req.flags, route.flags, noLoggedUnlogged ? true : route.isMEMBER);
-
-            if (result === -1)
-                req.isAuthorized = false;
-
-            if (result < 1)
-                continue;
-
-        }
-
-        return route;
-    }
-
-    return null;
-};
 
 /*
-    Accepts file
-    @extension {String}
-    @contentType {String} :: optional
-    return {Framework}
-*/
-Framework.prototype.accepts = function(extension, contentType) {
+ Accepts file
+ @extension {String}
+ @contentType {String} :: optional
+ return {Framework}
+ */
+Framework.prototype.accepts = function (extension, contentType) {
 
     var self = this;
 
@@ -4901,24 +4552,24 @@ Framework.prototype.accepts = function(extension, contentType) {
 };
 
 /*
-    @name {String}
-    @id {String} :: optional, Id of process
-    @timeout {Number} :: optional, timeout - default undefined (none)
-    return {Worker(fork)}
-*/
-Framework.prototype.worker = function(name, id, timeout) {
+ @name {String}
+ @id {String} :: optional, Id of process
+ @timeout {Number} :: optional, timeout - default undefined (none)
+ return {Worker(fork)}
+ */
+Framework.prototype.worker = function (name, id, timeout) {
 
     var self = this;
     var fork = null;
     var type = typeof(id);
 
-    if (type === NUMBER && typeof(timeout) === UNDEFINED) {
+    if (type === consts.NUMBER && typeof(timeout) === consts.UNDEFINED) {
         timeout = id;
         id = null;
-        type = UNDEFINED;
+        type = consts.UNDEFINED;
     }
 
-    if (type === STRING)
+    if (type === consts.STRING)
         fork = self.workers[id] || null;
 
     if (fork !== null)
@@ -4927,12 +4578,12 @@ Framework.prototype.worker = function(name, id, timeout) {
     var filename = utils.combine(self.config['directory-workers'], name);
 
     if (self.isCoffee) {
-        if (fs.existsSync(filename + EXTENSION_COFFEE))
-            filename += EXTENSION_COFFEE;
+        if (fs.existsSync(filename + consts.EXTENSION_COFFEE))
+            filename += consts.EXTENSION_COFFEE;
         else
-            filename += EXTENSION_JS;
+            filename += consts.EXTENSION_JS;
     } else
-        filename += EXTENSION_JS;
+        filename += consts.EXTENSION_JS;
 
     fork = child.fork(filename, {
         cwd: directory
@@ -4941,7 +4592,7 @@ Framework.prototype.worker = function(name, id, timeout) {
     fork.__id = id;
     self.workers[id] = fork;
 
-    fork.on('exit', function() {
+    fork.on('exit', function () {
         var self = this;
         if (self.__timeout)
             clearTimeout(self.__timeout);
@@ -4949,10 +4600,10 @@ Framework.prototype.worker = function(name, id, timeout) {
         delete framework.workers[self.__id];
     });
 
-    if (typeof(timeout) !== NUMBER)
+    if (typeof(timeout) !== consts.NUMBER)
         return fork;
 
-    fork.__timeout = setTimeout(function() {
+    fork.__timeout = setTimeout(function () {
 
         fork.kill();
         fork = null;
@@ -4984,24 +4635,24 @@ function FrameworkRestrictions(framework) {
 };
 
 /*
-    Allow IP or custom header
-    @name {String} :: IP or Header name
-    @value {RegExp} :: optional, header value
-    return {Framework}
-*/
-FrameworkRestrictions.prototype.allow = function(name, value) {
+ Allow IP or custom header
+ @name {String} :: IP or Header name
+ @value {RegExp} :: optional, header value
+ return {Framework}
+ */
+FrameworkRestrictions.prototype.allow = function (name, value) {
 
     var self = this;
 
     // IP address
-    if (typeof(value) === UNDEFINED) {
+    if (typeof(value) === consts.UNDEFINED) {
         self.allowedIP.push(name);
         self.refresh();
         return framework;
     }
 
     // Custom header
-    if (typeof(self.allowedCustom[name]) === UNDEFINED)
+    if (typeof(self.allowedCustom[name]) === consts.UNDEFINED)
         self.allowedCustom[name] = [value];
     else
         self.allowedCustom[name].push(value);
@@ -5012,24 +4663,24 @@ FrameworkRestrictions.prototype.allow = function(name, value) {
 };
 
 /*
-    Disallow IP or custom header
-    @name {String} :: IP or Header name
-    @value {RegExp} :: optional, header value
-    return {Framework}
-*/
-FrameworkRestrictions.prototype.disallow = function(name, value) {
+ Disallow IP or custom header
+ @name {String} :: IP or Header name
+ @value {RegExp} :: optional, header value
+ return {Framework}
+ */
+FrameworkRestrictions.prototype.disallow = function (name, value) {
 
     var self = this;
 
     // IP address
-    if (typeof(value) === UNDEFINED) {
+    if (typeof(value) === consts.UNDEFINED) {
         self.blockedIP.push(name);
         self.refresh();
         return framework;
     }
 
     // Custom header
-    if (typeof(self.blockedCustom[name]) === UNDEFINED)
+    if (typeof(self.blockedCustom[name]) === consts.UNDEFINED)
         self.blockedCustom[name] = [value];
     else
         self.blockedCustom[name].push(value);
@@ -5040,10 +4691,10 @@ FrameworkRestrictions.prototype.disallow = function(name, value) {
 };
 
 /*
-    INTERNAL: Refresh internal informations
-    return {Framework}
-*/
-FrameworkRestrictions.prototype.refresh = function() {
+ INTERNAL: Refresh internal informations
+ return {Framework}
+ */
+FrameworkRestrictions.prototype.refresh = function () {
 
     var self = this;
 
@@ -5062,10 +4713,10 @@ FrameworkRestrictions.prototype.refresh = function() {
 };
 
 /*
-    Clear all restrictions for IP
-    return {Framework}
-*/
-FrameworkRestrictions.prototype.clearIP = function() {
+ Clear all restrictions for IP
+ return {Framework}
+ */
+FrameworkRestrictions.prototype.clearIP = function () {
     var self = this;
     self.allowedIP = [];
     self.blockedIP = [];
@@ -5074,10 +4725,10 @@ FrameworkRestrictions.prototype.clearIP = function() {
 }
 
 /*
-    Clear all restrictions for custom headers
-    return {Framework}
-*/
-FrameworkRestrictions.prototype.clearHeaders = function() {
+ Clear all restrictions for custom headers
+ return {Framework}
+ */
+FrameworkRestrictions.prototype.clearHeaders = function () {
     var self = this;
     self.allowedCustom = {};
     self.blockedCustom = {};
@@ -5088,10 +4739,10 @@ FrameworkRestrictions.prototype.clearHeaders = function() {
 }
 
 /*
-    INTERNAL: Restrictions using
-    return {Framework}
-*/
-FrameworkRestrictions.prototype._allowedCustom = function(headers) {
+ INTERNAL: Restrictions using
+ return {Framework}
+ */
+FrameworkRestrictions.prototype._allowedCustom = function (headers) {
 
     var self = this;
     var length = self.allowedCustomKeys.length;
@@ -5100,7 +4751,7 @@ FrameworkRestrictions.prototype._allowedCustom = function(headers) {
 
         var key = self.allowedCustomKeys[i];
         var value = headers[key];
-        if (typeof(value) === UNDEFINED)
+        if (typeof(value) === consts.UNDEFINED)
             return false;
 
         var arr = self.allowedCustom[key];
@@ -5118,10 +4769,10 @@ FrameworkRestrictions.prototype._allowedCustom = function(headers) {
 };
 
 /*
-    INTERNAL: Restrictions using
-    return {Framework}
-*/
-FrameworkRestrictions.prototype._blockedCustom = function(headers) {
+ INTERNAL: Restrictions using
+ return {Framework}
+ */
+FrameworkRestrictions.prototype._blockedCustom = function (headers) {
 
     var self = this;
     var length = self.blockedCustomKeys.length;
@@ -5131,7 +4782,7 @@ FrameworkRestrictions.prototype._blockedCustom = function(headers) {
         var key = self.blockedCustomKeys[i];
         var value = headers[key];
 
-        if (typeof(value) === UNDEFINED)
+        if (typeof(value) === consts.UNDEFINED)
             return false;
 
         var arr = self.blockedCustom[key];
@@ -5149,597 +4800,9 @@ FrameworkRestrictions.prototype._blockedCustom = function(headers) {
 
 // *********************************************************************************
 // =================================================================================
-// Framework File System
-// 1.01
-// =================================================================================
-// *********************************************************************************
-
-function FrameworkFileSystem(framework) {
-
-    this.config = framework.config;
-
-    this.create = {
-        css: this.createCSS.bind(this),
-        js: this.createJS.bind(this),
-        view: this.createView.bind(this),
-        content: this.createContent.bind(this),
-        template: this.createTemplate.bind(this),
-        resource: this.createResource.bind(this),
-        temporary: this.createTemporary.bind(this),
-        worker: this.createWorker.bind(this),
-        file: this.createFile.bind(this)
-    };
-
-    this.rm = {
-        css: this.deleteCSS.bind(this),
-        js: this.deleteJS.bind(this),
-        view: this.deleteView.bind(this),
-        content: this.deleteContent.bind(this),
-        template: this.deleteTemplate.bind(this),
-        resource: this.deleteResource.bind(this),
-        temporary: this.deleteTemporary.bind(this),
-        worker: this.deleteWorker.bind(this),
-        file: this.deleteFile.bind(this)
-    };
-}
-
-/*
-    Delete a file - CSS
-    @name {String}
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.deleteCSS = function(name) {
-    var self = this;
-
-    if (name.lastIndexOf('.css') === -1)
-        name += '.css';
-
-    var filename = utils.combine(self.config['directory-public'], self.config['static-url-css'], name);
-    return self.deleteFile(filename);
-};
-
-/*
-    Delete a file - JS
-    @name {String}
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.deleteJS = function(name) {
-    var self = this;
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    var filename = utils.combine(self.config['directory-public'], self.config['static-url-js'], name);
-    return self.deleteFile(filename);
-};
-
-/*
-    Delete a file - View
-    @name {String}
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.deleteView = function(name) {
-    var self = this;
-
-    if (name.lastIndexOf('.html') === -1)
-        name += '.html';
-
-    var filename = utils.combine(self.config['directory-views'], name);
-    return self.deleteFile(filename);
-};
-
-/*
-    Delete a file - Content
-    @name {String}
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.deleteContent = function(name) {
-    var self = this;
-
-    if (name.lastIndexOf('.html') === -1)
-        name += '.html';
-
-    var filename = utils.combine(self.config['directory-contents'], name);
-    return self.deleteFile(filename);
-};
-
-/*
-    Delete a file - Worker
-    @name {String}
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.deleteWorker = function(name) {
-    var self = this;
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    var filename = utils.combine(self.config['directory-workers'], name);
-    return self.deleteFile(filename);
-};
-
-/*
-    Delete a file - Template
-    @name {String}
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.deleteTemplate = function(name) {
-    var self = this;
-
-    if (name.lastIndexOf('.html') === -1)
-        name += '.html';
-
-    var filename = utils.combine(self.config['directory-templates'], name);
-    return self.deleteFile(filename);
-};
-
-/*
-    Delete a file - Resource
-    @name {String}
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.deleteResource = function(name) {
-    var self = this;
-
-    if (name.lastIndexOf('.resource') === -1)
-        name += '.resource';
-
-    var filename = utils.combine(self.config['directory-resources'], name);
-    return self.deleteFile(filename);
-};
-
-/*
-    Delete a file - Temporary
-    @name {String}
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.deleteTemporary = function(name) {
-    var self = this;
-    var filename = utils.combine(self.config['directory-temp'], name);
-    return self.deleteFile(filename);
-};
-
-/*
-    Internal :: Delete a file
-    @name {String}
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.deleteFile = function(filename) {
-    var self = this;
-
-    fs.exists(filename, function(exist) {
-        if (!exist)
-            return;
-        fs.unlink(filename);
-    });
-
-    return true;
-};
-
-/*
-    Create a file with the CSS
-    @name {String}
-    @content {String}
-    @rewrite {Boolean} :: optional (default false)
-    @append {Boolean} :: optional (default false)
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.createCSS = function(name, content, rewrite, append) {
-
-    var self = this;
-
-    if ((content || '').length === 0)
-        return false;
-
-    if (name.lastIndexOf('.css') === -1)
-        name += '.css';
-
-    var filename = utils.combine(self.config['directory-public'], self.config['static-url-css'], name);
-    return self.createFile(filename, content, append, rewrite);
-};
-
-/*
-    Create a file with the JavaScript
-    @name {String}
-    @content {String}
-    @rewrite {Boolean} :: optional (default false)
-    @append {Boolean} :: optional (default false)
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.createJS = function(name, content, rewrite, append) {
-
-    var self = this;
-
-    if ((content || '').length === 0)
-        return false;
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    var filename = utils.combine(self.config['directory-public'], self.config['static-url-js'], name);
-    return self.createFile(filename, content, append, rewrite);
-};
-
-/*
-    Create a file with the template
-    @name {String}
-    @content {String}
-    @rewrite {Boolean} :: optional (default false)
-    @append {Boolean} :: optional (default false)
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.createTemplate = function(name, content, rewrite, append) {
-
-    var self = this;
-
-    if ((content || '').length === 0)
-        return false;
-
-    if (name.lastIndexOf('.html') === -1)
-        name += '.html';
-
-    framework._verify_directory('templates');
-
-    var filename = utils.combine(self.config['directory-templates'], name);
-    return self.createFile(filename, content, append, rewrite);
-};
-
-/*
-    Create a file with the view
-    @name {String}
-    @content {String}
-    @rewrite {Boolean} :: optional (default false)
-    @append {Boolean} :: optional (default false)
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.createView = function(name, content, rewrite, append) {
-
-    var self = this;
-
-    if ((content || '').length === 0)
-        return false;
-
-    if (name.lastIndexOf('.html') === -1)
-        name += '.html';
-
-    framework._verify_directory('views');
-
-    var filename = utils.combine(self.config['directory-views'], name);
-    return self.createFile(filename, content, append, rewrite);
-};
-
-/*
-    Create a file with the content
-    @name {String}
-    @content {String}
-    @rewrite {Boolean} :: optional (default false)
-    @append {Boolean} :: optional (default false)
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.createContent = function(name, content, rewrite, append) {
-
-    var self = this;
-
-    if ((content || '').length === 0)
-        return false;
-
-    if (name.lastIndexOf('.html') === -1)
-        name += '.html';
-
-    framework._verify_directory('contents');
-
-    var filename = utils.combine(self.config['directory-contents'], name);
-    return self.createFile(filename, content, append, rewrite);
-};
-
-/*
-    Create a file with the worker
-    @name {String}
-    @content {String}
-    @rewrite {Boolean} :: optional (default false)
-    @append {Boolean} :: optional (default false)
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.createWorker = function(name, content, rewrite, append) {
-
-    var self = this;
-
-    if ((content || '').length === 0)
-        return false;
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    framework._verify_directory('workers');
-
-    var filename = utils.combine(self.config['directory-workers'], name);
-    return self.createFile(filename, content, append, rewrite);
-};
-
-/*
-    Create a file with the resource
-    @name {String}
-    @content {String or Object}
-    @rewrite {Boolean} :: optional (default false)
-    @append {Boolean} :: optional (default false)
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.createResource = function(name, content, rewrite, append) {
-
-    var self = this;
-
-    if ((content || '').length === 0)
-        return false;
-
-    if (name.lastIndexOf('.resource') === -1)
-        name += '.resource';
-
-    var builder = content;
-
-    if (typeof(content) === OBJECT) {
-        builder = '';
-        Object.keys(content).forEach(function(o) {
-            builder += o.padRight(20, ' ') + ': ' + content[o] + '\n';
-        });
-    }
-
-    framework._verify_directory('resources');
-
-    var filename = utils.combine(self.config['directory-resources'], name);
-    return self.createFile(filename, builder, append, rewrite);
-};
-
-/*
-    Create a temporary file
-    @name {String}
-    @stream {Stream}
-    @callback {Function} :: function(err, filename) {}
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.createTemporary = function(name, stream, callback) {
-    var self = this;
-
-    framework._verify_directory('temp');
-
-    var filename = utils.combine(self.config['directory-temp'], name);
-    var writer = fs.createWriteStream(filename);
-
-    if (callback) {
-        writer.on('error', function(err) {
-            callback(err, filename);
-        });
-        writer.on('end', function() {
-            callback(null, filename);
-        });
-    }
-
-    stream.pipe(writer);
-    return self;
-};
-
-/*
-    Internal :: Create a file with the content
-    @filename {String}
-    @content {String}
-    @append {Boolean}
-    @rewrite {Boolean}
-    @callback {Function} :: optional
-    return {Boolean}
-*/
-FrameworkFileSystem.prototype.createFile = function(filename, content, append, rewrite, callback) {
-
-    var self = this;
-
-    if (content.substring(0, 7) === 'http://' || content.substring(0, 8) === 'https://') {
-
-        utils.request(content, 'GET', null, function(err, data) {
-
-            if (!err)
-                self.createFile(filename, data, append, rewrite);
-
-            if (typeof(callback) === FUNCTION)
-                callback(err, filename);
-
-        });
-
-        return true;
-    }
-
-    if ((content || '').length === 0)
-        return false;
-
-    var exists = fs.existsSync(filename);
-
-    if (exists && append) {
-        var data = fs.readFileSync(filename).toString(ENCODING);
-
-        if (data.indexOf(content) === -1) {
-            fs.appendFileSync(filename, '\n' + content);
-            return true;
-        }
-
-        return false;
-    }
-
-    if (exists && !rewrite)
-        return false;
-
-    fs.writeFileSync(filename, content, ENCODING);
-
-    if (typeof(callback) === FUNCTION)
-        callback(null, filename);
-
-    return true;
-};
-
-// *********************************************************************************
-// =================================================================================
 // Framework path
 // =================================================================================
 // *********************************************************************************
-
-function FrameworkPath(framework) {
-    this.config = framework.config;
-}
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.public = function(filename) {
-    var self = this;
-    framework._verify_directory('public');
-    return utils.combine(self.config['directory-public'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.logs = function(filename) {
-    var self = this;
-    framework._verify_directory('logs');
-    return utils.combine(self.config['directory-logs'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.components = function(filename) {
-    var self = this;
-    return utils.combine(self.config['directory-components'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.models = function(filename) {
-    var self = this;
-    return utils.combine(self.config['directory-models'], filename || '').replace(/\\/g, '/');
-};
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.temp = function(filename) {
-    var self = this;
-    framework._verify_directory('temp');
-    return utils.combine(self.config['directory-temp'], filename || '').replace(/\\/g, '/');
-};
-
-FrameworkPath.prototype.temporary = function(filename) {
-    return this.temp(filename);
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.views = function(filename) {
-    var self = this;
-    framework._verify_directory('views');
-    return utils.combine(self.config['directory-views'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.templates = function(filename) {
-    var self = this;
-    framework._verify_directory('templates');
-    return utils.combine(self.config['directory-templates'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.workers = function(filename) {
-    var self = this;
-    framework._verify_directory('workers');
-    return utils.combine(self.config['directory-workers'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.databases = function(filename) {
-    var self = this;
-    framework._verify_directory('databases');
-    return utils.combine(self.config['directory-databases'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.contents = function(filename) {
-    var self = this;
-    framework._verify_directory('contents');
-    return utils.combine(self.config['directory-contents'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.modules = function(filename) {
-    var self = this;
-    framework._verify_directory('modules');
-    return utils.combine(self.config['directory-modules'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.controllers = function(filename) {
-    var self = this;
-    framework._verify_directory('controllers');
-    return utils.combine(self.config['directory-controllers'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.definitions = function(filename) {
-    var self = this;
-    framework._verify_directory('definitions');
-    return utils.combine(self.config['directory-definitions'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.tests = function(filename) {
-    var self = this;
-    framework._verify_directory('tests');
-    return utils.combine(self.config['directory-tests'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.resources = function(filename) {
-    var self = this;
-    framework._verify_directory('resources');
-    return utils.combine(self.config['directory-resources'], filename || '').replace(/\\/g, '/');
-};
-
-/*
-    @filename {String} :: optional
-    return {String}
-*/
-FrameworkPath.prototype.root = function(filename) {
-    return path.join(directory, filename || '');
-};
 
 // *********************************************************************************
 // =================================================================================
@@ -5748,9 +4811,9 @@ FrameworkPath.prototype.root = function(filename) {
 // *********************************************************************************
 
 /*
-    Cache class
-    @framework {Framework}
-*/
+ Cache class
+ @framework {Framework}
+ */
 function FrameworkCache(framework) {
     this.repository = {};
     this.count = 1;
@@ -5758,37 +4821,37 @@ function FrameworkCache(framework) {
 }
 
 /*
-    Cache init
-    return {Cache}
-*/
-FrameworkCache.prototype.init = function(interval) {
+ Cache init
+ return {Cache}
+ */
+FrameworkCache.prototype.init = function (interval) {
 
     var self = this;
 
-    self.interval = setInterval(function() {
+    self.interval = setInterval(function () {
         framework.cache.recycle();
     }, interval || 1000 * 60);
 
     return self;
 };
 
-FrameworkCache.prototype.stop = function() {
+FrameworkCache.prototype.stop = function () {
     var self = this;
     clearInterval(self.interval);
     return self;
 };
 
-FrameworkCache.prototype.clear = function() {
+FrameworkCache.prototype.clear = function () {
     var self = this;
     self.repository = {};
     return self;
 };
 
 /*
-    Internal function
-    return {Cache}
-*/
-FrameworkCache.prototype.recycle = function() {
+ Internal function
+ return {Cache}
+ */
+FrameworkCache.prototype.recycle = function () {
 
     var self = this;
     var repository = self.repository;
@@ -5818,16 +4881,16 @@ FrameworkCache.prototype.recycle = function() {
 };
 
 /*
-    Add item to cache
-    @name {String}
-    @value {Object}
-    @expire {Date}
-    return @value
-*/
-FrameworkCache.prototype.add = function(name, value, expire) {
+ Add item to cache
+ @name {String}
+ @value {Object}
+ @expire {Date}
+ return @value
+ */
+FrameworkCache.prototype.add = function (name, value, expire) {
     var self = this;
 
-    if (typeof(expire) === UNDEFINED)
+    if (typeof(expire) === consts.UNDEFINED)
         expire = new Date().add('m', 5);
 
     self.repository[name] = {
@@ -5838,11 +4901,11 @@ FrameworkCache.prototype.add = function(name, value, expire) {
 };
 
 /*
-    Read item from cache
-    @name {String}
-    return {Object}
-*/
-FrameworkCache.prototype.read = function(name) {
+ Read item from cache
+ @name {String}
+ return {Object}
+ */
+FrameworkCache.prototype.read = function (name) {
     var self = this;
     var value = self.repository[name] || null;
 
@@ -5856,16 +4919,16 @@ FrameworkCache.prototype.read = function(name) {
 };
 
 /*
-    Update cache item expiration
-    @name {String}
-    @expire {Date}
-    return {Cache}
-*/
-FrameworkCache.prototype.setExpire = function(name, expire) {
+ Update cache item expiration
+ @name {String}
+ @expire {Date}
+ return {Cache}
+ */
+FrameworkCache.prototype.setExpire = function (name, expire) {
     var self = this;
     var obj = self.repository[name];
 
-    if (typeof(obj) === UNDEFINED)
+    if (typeof(obj) === consts.UNDEFINED)
         return self;
 
     obj.expire = expire;
@@ -5873,11 +4936,11 @@ FrameworkCache.prototype.setExpire = function(name, expire) {
 };
 
 /*
-    Remove item from cache
-    @name {String}
-    return {Object} :: return value;
-*/
-FrameworkCache.prototype.remove = function(name) {
+ Remove item from cache
+ @name {String}
+ return {Object} :: return value;
+ */
+FrameworkCache.prototype.remove = function (name) {
     var self = this;
     var value = self.repository[name] || null;
 
@@ -5886,11 +4949,11 @@ FrameworkCache.prototype.remove = function(name) {
 };
 
 /*
-    Remove all
-    @search {String}
-    return {Number}
-*/
-FrameworkCache.prototype.removeAll = function(search) {
+ Remove all
+ @search {String}
+ return {Number}
+ */
+FrameworkCache.prototype.removeAll = function (search) {
     var self = this;
     var count = 0;
     var keys = Object.keys(self.repository);
@@ -5915,13 +4978,13 @@ FrameworkCache.prototype.removeAll = function(search) {
 };
 
 /*
-    Cache function value
-    @name {String}
-    @fnCache {Function} :: params, @value {Object}, @expire {Date}
-    @fnCallback {Function} :: params, @value {Object}
-    return {Cache}
-*/
-FrameworkCache.prototype.fn = function(name, fnCache, fnCallback) {
+ Cache function value
+ @name {String}
+ @fnCache {Function} :: params, @value {Object}, @expire {Date}
+ @fnCallback {Function} :: params, @value {Object}
+ return {Cache}
+ */
+FrameworkCache.prototype.fn = function (name, fnCache, fnCallback) {
 
     var self = this;
     var value = self.read(name);
@@ -5932,7 +4995,7 @@ FrameworkCache.prototype.fn = function(name, fnCache, fnCallback) {
         return self;
     }
 
-    fnCache(function(value, expire) {
+    fnCache(function (value, expire) {
         self.add(name, value, expire);
         if (fnCallback)
             fnCallback(value);
@@ -5959,7 +5022,6 @@ var REPOSITORY_META_TITLE = '$title';
 var REPOSITORY_META_DESCRIPTION = '$description';
 var REPOSITORY_META_KEYWORDS = '$keywords';
 var REPOSITORY_META_IMAGE = '$image';
-var ATTR_END = '"';
 
 function Subscribe(framework, req, res, type) {
 
@@ -5979,7 +5041,7 @@ function Subscribe(framework, req, res, type) {
     this.error = null;
 }
 
-Subscribe.prototype.success = function() {
+Subscribe.prototype.success = function () {
     var self = this;
 
     if (self.timeout)
@@ -5990,10 +5052,10 @@ Subscribe.prototype.success = function() {
     return self;
 };
 
-Subscribe.prototype.file = function() {
+Subscribe.prototype.file = function () {
     var self = this;
 
-    self.req.on('end', function() {
+    self.req.on('end', function () {
         self.doEndfile(this);
     });
 
@@ -6002,9 +5064,9 @@ Subscribe.prototype.file = function() {
 };
 
 /*
-    @header {String} :: Content-Type
-*/
-Subscribe.prototype.multipart = function(header) {
+ @header {String} :: Content-Type
+ */
+Subscribe.prototype.multipart = function (header) {
 
     var self = this;
     var req = self.req;
@@ -6020,11 +5082,11 @@ Subscribe.prototype.multipart = function(header) {
 
     if (header.indexOf('mixed') === -1) {
         framework._verify_directory('temp');
-        internal.parseMULTIPART(req, header, self.route.maximumSize, framework.config['directory-temp'], function(data) {
+        internal.parseMULTIPART(req, header, self.route.maximumSize, framework.config['directory-temp'], function (data) {
             if (framework.onXSS)
                 return framework.onXSS(data);
             return true;
-        }, function() {
+        }, function () {
             self.doEnd();
         });
         return self;
@@ -6034,7 +5096,7 @@ Subscribe.prototype.multipart = function(header) {
     self.execute();
 };
 
-Subscribe.prototype.urlencoded = function() {
+Subscribe.prototype.urlencoded = function () {
 
     var self = this;
     self.route = framework.lookup(self.req, self.req.uri.pathname, self.req.flags, true);
@@ -6050,17 +5112,17 @@ Subscribe.prototype.urlencoded = function() {
     self.req.buffer_has = true;
     self.req.buffer_exceeded = false;
 
-    self.req.on('data', function(chunk) {
+    self.req.on('data', function (chunk) {
         self.doParsepost(chunk);
     });
 
     self.end();
 };
 
-Subscribe.prototype.end = function() {
+Subscribe.prototype.end = function () {
     var self = this;
 
-    self.req.on('end', function() {
+    self.req.on('end', function () {
         self.doEnd();
     });
 
@@ -6068,9 +5130,9 @@ Subscribe.prototype.end = function() {
 };
 
 /*
-    @status {Number} :: HTTP status
-*/
-Subscribe.prototype.execute = function(status) {
+ @status {Number} :: HTTP status
+ */
+Subscribe.prototype.execute = function (status) {
 
     var self = this;
     var route = self.route;
@@ -6107,7 +5169,7 @@ Subscribe.prototype.execute = function(status) {
     }
 
     if (route === null) {
-        framework.responseContent(req, res, status || 404, utils.httpStatus(status || 404), CONTENTTYPE_TEXTPLAIN, framework.config['allow-gzip']);
+        framework.responseContent(req, res, status || 404, utils.httpStatus(status || 404), consts.CONTENTTYPE_TEXTPLAIN, framework.config['allow-gzip']);
         return self;
     }
 
@@ -6118,7 +5180,7 @@ Subscribe.prototype.execute = function(status) {
     self.controller = controller;
 
     if (!self.isCanceled && !self.isMixed && route.timeout > 0) {
-        self.timeout = setTimeout(function() {
+        self.timeout = setTimeout(function () {
             self.doCancel();
         }, route.timeout);
     }
@@ -6138,8 +5200,8 @@ Subscribe.prototype.execute = function(status) {
             continue;
         }
 
-        (function(middleware) {
-            func.push(function(next) {
+        (function (middleware) {
+            func.push(function (next) {
                 middleware.call(controller, req, res, next, route.options);
             });
         })(middleware);
@@ -6149,7 +5211,7 @@ Subscribe.prototype.execute = function(status) {
     if (func.length === 0)
         return self.doExecute();
 
-    func._async_middleware(res, function() {
+    func._async_middleware(res, function () {
         self.doExecute();
     });
 
@@ -6157,17 +5219,17 @@ Subscribe.prototype.execute = function(status) {
 };
 
 /*
-    @flags {String Array}
-    @url {String}
-*/
-Subscribe.prototype.prepare = function(flags, url) {
+ @flags {String Array}
+ @url {String}
+ */
+Subscribe.prototype.prepare = function (flags, url) {
 
     var self = this;
     var req = self.req;
     var res = self.res;
 
     if (framework.onAuthorization !== null) {
-        framework.onAuthorization(req, res, flags, function(isAuthorized, user) {
+        framework.onAuthorization(req, res, flags, function (isAuthorized, user) {
             self.doAuthorization(isAuthorized, user);
         });
         return;
@@ -6182,7 +5244,7 @@ Subscribe.prototype.prepare = function(flags, url) {
     self.execute(req.buffer_exceeded ? 431 : 404);
 };
 
-Subscribe.prototype.doExecute = function() {
+Subscribe.prototype.doExecute = function () {
 
     var self = this;
     var name = self.route.name;
@@ -6216,9 +5278,9 @@ Subscribe.prototype.doExecute = function() {
 
         framework._verify_directory('temp');
 
-        internal.parseMULTIPART_MIXED(req, self.header, framework.config['directory-temp'], function(file) {
+        internal.parseMULTIPART_MIXED(req, self.header, framework.config['directory-temp'], function (file) {
             self.route.onExecute.call(controller, file);
-        }, function() {
+        }, function () {
             self.doEnd();
         });
 
@@ -6233,9 +5295,9 @@ Subscribe.prototype.doExecute = function() {
 };
 
 /*
-    @isLogged {Boolean}
-*/
-Subscribe.prototype.doAuthorization = function(isLogged, user) {
+ @isLogged {Boolean}
+ */
+Subscribe.prototype.doAuthorization = function (isLogged, user) {
 
     var self = this;
     var req = self.req;
@@ -6256,7 +5318,7 @@ Subscribe.prototype.doAuthorization = function(isLogged, user) {
     return self;
 };
 
-Subscribe.prototype.doEnd = function() {
+Subscribe.prototype.doEnd = function () {
 
     var self = this;
     var req = self.req;
@@ -6266,12 +5328,12 @@ Subscribe.prototype.doEnd = function() {
     if (self.isMixed) {
         req.clear(true);
         var headers = {};
-        headers[RESPONSE_HEADER_CONTENTTYPE] = 'text/plain; charset=utf-8';
-        headers[RESPONSE_HEADER_CACHECONTROL] = 'private, max-age=0';
+        headers[consts.RESPONSE_HEADER_CONTENTTYPE] = 'text/plain; charset=utf-8';
+        headers[consts.RESPONSE_HEADER_CACHECONTROL] = 'private, max-age=0';
         res.writeHead(200, headers);
         res.end('END');
         framework._request_stats(false, false);
-        framework.emit('request-end', req,res);
+        framework.emit('request-end', req, res);
         return self;
     }
 
@@ -6363,7 +5425,7 @@ Subscribe.prototype.doEnd = function() {
     return self;
 };
 
-Subscribe.prototype.route400 = function(problem) {
+Subscribe.prototype.route400 = function (problem) {
     var self = this;
     self.route = framework.lookup(self.req, '#400', []);
     self.exception = problem;
@@ -6371,7 +5433,7 @@ Subscribe.prototype.route400 = function(problem) {
     return self;
 };
 
-Subscribe.prototype.doEndfile = function() {
+Subscribe.prototype.doEndfile = function () {
 
     var self = this;
     var req = self.req;
@@ -6393,7 +5455,7 @@ Subscribe.prototype.doEndfile = function() {
 
         } catch (err) {
             framework.error(err, file.controller + ' :: ' + file.name, req.uri);
-            framework.responseContent(req, res, 500, '500 - internal server error', CONTENTTYPE_TEXTPLAIN, framework.config['allow-gzip']);
+            framework.responseContent(req, res, 500, '500 - internal server error', consts.CONTENTTYPE_TEXTPLAIN, framework.config['allow-gzip']);
             return self;
         }
     }
@@ -6407,7 +5469,7 @@ Subscribe.prototype.doEndfile = function() {
  * @param {FileRoute} file
  * @return {Subscribe}
  */
-Subscribe.prototype.doEndfile_middleware = function(file) {
+Subscribe.prototype.doEndfile_middleware = function (file) {
 
     var func = [];
     var length = file.middleware.length;
@@ -6421,18 +5483,19 @@ Subscribe.prototype.doEndfile_middleware = function(file) {
         if (!middleware)
             continue;
 
-        (function(middleware) {
-        func.push(function(next) {
-            middleware.call(framework, req, res, next, file.options);
-        })})(middleware);
+        (function (middleware) {
+            func.push(function (next) {
+                middleware.call(framework, req, res, next, file.options);
+            })
+        })(middleware);
     }
 
-    func._async_middleware(res, function() {
+    func._async_middleware(res, function () {
         try {
             file.onExecute.call(framework, req, res, false);
         } catch (err) {
             framework.error(err, file.controller + ' :: ' + file.name, req.uri);
-            framework.responseContent(req, res, 500, '500 - internal server error', CONTENTTYPE_TEXTPLAIN, framework.config['allow-gzip']);
+            framework.responseContent(req, res, 500, '500 - internal server error', consts.CONTENTTYPE_TEXTPLAIN, framework.config['allow-gzip']);
             return self;
         }
     });
@@ -6445,7 +5508,7 @@ Subscribe.prototype.doEndfile_middleware = function(file) {
  * @param {Buffer} chunk
  * @return {FrameworkSubscribe}
  */
-Subscribe.prototype.doParsepost = function(chunk) {
+Subscribe.prototype.doParsepost = function (chunk) {
 
     var self = this;
     var req = self.req;
@@ -6465,7 +5528,7 @@ Subscribe.prototype.doParsepost = function(chunk) {
     return self;
 };
 
-Subscribe.prototype.doCancel = function() {
+Subscribe.prototype.doCancel = function () {
     var self = this;
 
     framework.stats.response.timeout++;
@@ -6488,13 +5551,13 @@ Subscribe.prototype.doCancel = function() {
 // *********************************************************************************
 
 /*
-    Controller class
-    @name {String}
-    @req {ServerRequest}
-    @res {ServerResponse}
-    @substribe {Object}
-    return {Controller};
-*/
+ Controller class
+ @name {String}
+ @req {ServerRequest}
+ @res {ServerResponse}
+ @substribe {Object}
+ return {Controller};
+ */
 function Controller(name, req, res, subscribe) {
 
     this.subscribe = subscribe;
@@ -6528,7 +5591,7 @@ function Controller(name, req, res, subscribe) {
     this.$model = null;
     this.prefix = req.prefix;
 
-    if (typeof(this.prefix) === UNDEFINED || this.prefix.length === 0)
+    if (typeof(this.prefix) === consts.UNDEFINED || this.prefix.length === 0)
         this.prefix = '';
     else
         this.prefix = this.prefix;
@@ -6664,7 +5727,7 @@ Controller.prototype = {
 
         var self = this;
 
-        if (typeof(self._async) === UNDEFINED)
+        if (typeof(self._async) === consts.UNDEFINED)
             self._async = new utils.Async(self);
 
         return self._async;
@@ -6676,34 +5739,34 @@ Controller.prototype = {
 // ======================================================
 
 /*
-    Validation / alias for validate
-    @model {Object}
-    @properties {String Array}
-    @prefix {String} :: optional - prefix in a resource
-    @name {String} :: optional - a resource name
-    return {ErrorBuilder}
-*/
-Controller.prototype.validation = function(model, properties, prefix, name) {
+ Validation / alias for validate
+ @model {Object}
+ @properties {String Array}
+ @prefix {String} :: optional - prefix in a resource
+ @name {String} :: optional - a resource name
+ return {ErrorBuilder}
+ */
+Controller.prototype.validation = function (model, properties, prefix, name) {
     return this.validate(model, properties, prefix, name);
 };
 
-Controller.prototype.clear = function() {
+Controller.prototype.clear = function () {
     var self = this;
     self.req.clear();
     return self;
 };
 
 /*
-    Pipe URL response
-    @url {String}
-    @headers {Object} :: optional
-    return {Controller}
-*/
-Controller.prototype.pipe = function(url, headers, callback) {
+ Pipe URL response
+ @url {String}
+ @headers {Object} :: optional
+ return {Controller}
+ */
+Controller.prototype.pipe = function (url, headers, callback) {
 
     var self = this;
 
-    if (typeof(headers) === FUNCTION) {
+    if (typeof(headers) === consts.FUNCTION) {
         var tmp = callback;
         callback = headers;
         headers = tmp;
@@ -6712,7 +5775,7 @@ Controller.prototype.pipe = function(url, headers, callback) {
     if (self.res.success || !self.isConnected)
         return self;
 
-    framework.responsePipe(self.req, self.res, url, headers, null, function() {
+    framework.responsePipe(self.req, self.res, url, headers, null, function () {
         self.subscribe.success();
         if (callback)
             callback();
@@ -6722,43 +5785,43 @@ Controller.prototype.pipe = function(url, headers, callback) {
 };
 
 /*
-    Cryptography (encrypt)
-    @value {String}
-    @key {String}
-    @isUniqe {Boolean} :: optional, default true
-    return {String}
-*/
-Controller.prototype.encrypt = function() {
+ Cryptography (encrypt)
+ @value {String}
+ @key {String}
+ @isUniqe {Boolean} :: optional, default true
+ return {String}
+ */
+Controller.prototype.encrypt = function () {
     return framework.encrypt.apply(framework, arguments);
 };
 
 /*
-    Cryptography (decrypt)
-    @value {String}
-    @key {String}
-    @jsonConvert {Boolean} :: optional (convert string to JSON)
-    return {String or Object}
-*/
-Controller.prototype.decrypt = function() {
+ Cryptography (decrypt)
+ @value {String}
+ @key {String}
+ @jsonConvert {Boolean} :: optional (convert string to JSON)
+ return {String or Object}
+ */
+Controller.prototype.decrypt = function () {
     return framework.decrypt.apply(framework, arguments);
 };
 
 /*
-    Hash value
-    @type {String} :: sha1, sha256, sha512, md5
-    @value {Object}
-    @salt {String or Boolean} :: custom salt {String} or secret as salt {undefined or Boolean}
-    return {String}
-*/
-Controller.prototype.hash = function() {
+ Hash value
+ @type {String} :: sha1, sha256, sha512, md5
+ @value {Object}
+ @salt {String or Boolean} :: custom salt {String} or secret as salt {undefined or Boolean}
+ return {String}
+ */
+Controller.prototype.hash = function () {
     return framework.hash.apply(framework, arguments);
 };
 
-Controller.prototype.validate = function(model, properties, prefix, name) {
+Controller.prototype.validate = function (model, properties, prefix, name) {
 
     var self = this;
 
-    var resource = function(key) {
+    var resource = function (key) {
         return self.resource(name || 'default', (prefix || '') + key);
     };
 
@@ -6767,58 +5830,58 @@ Controller.prototype.validate = function(model, properties, prefix, name) {
 };
 
 /*
-    Set response header
-    @name {String}
-    @value {String}
-    return {Controller}
-*/
-Controller.prototype.header = function(name, value) {
+ Set response header
+ @name {String}
+ @value {String}
+ return {Controller}
+ */
+Controller.prototype.header = function (name, value) {
     var self = this;
     self.res.setHeader(name, value);
     return self;
 };
 
 /*
-    Get host name
-    @path {String} :: optional
-    return {String}
-*/
-Controller.prototype.host = function(path) {
+ Get host name
+ @path {String} :: optional
+ return {String}
+ */
+Controller.prototype.host = function (path) {
     var self = this;
-    return self.req.hostname(path);
+    return self.hostname(path);
 };
 
-Controller.prototype.hostname = function(path) {
+Controller.prototype.hostname = function (path) {
     var self = this;
     return self.req.hostname(path);
 };
 
 /*
-    Cross-origin resource sharing
-    @allow {String Array}
-    @method {String Array} :: optional, default null
-    @header {String Array} :: optional, default null
-    @credentials {Boolean} :: optional, default false
-    return {Boolean}
-*/
-Controller.prototype.cors = function(allow, method, header, credentials) {
+ Cross-origin resource sharing
+ @allow {String Array}
+ @method {String Array} :: optional, default null
+ @header {String Array} :: optional, default null
+ @credentials {Boolean} :: optional, default false
+ return {Boolean}
+ */
+Controller.prototype.cors = function (allow, method, header, credentials) {
 
     var self = this;
     var origin = self.req.headers['origin'];
     var isOPTIONS = self.req.method.toUpperCase() === 'OPTIONS';
 
-    if (typeof(origin) === UNDEFINED)
+    if (typeof(origin) === consts.UNDEFINED)
         return true;
 
-    if (typeof(allow) === UNDEFINED)
+    if (typeof(allow) === consts.UNDEFINED)
         allow = '*';
 
-    if (typeof(method) === BOOLEAN) {
+    if (typeof(method) === consts.BOOLEAN) {
         credentials = method;
         method = null;
     }
 
-    if (typeof(header) === BOOLEAN) {
+    if (typeof(header) === consts.BOOLEAN) {
         credentials = header;
         header = null;
     }
@@ -6918,76 +5981,76 @@ Controller.prototype.cors = function(allow, method, header, credentials) {
 };
 
 /*
-    Error
-    @err {Error}
-    return {Framework}
-*/
-Controller.prototype.error = function(err) {
+ Error
+ @err {Error}
+ return {Framework}
+ */
+Controller.prototype.error = function (err) {
     var self = this;
-    framework.error(typeof(err) === STRING ? new Error(err) : err, self.name, self.uri);
+    framework.error(typeof(err) === consts.STRING ? new Error(err) : err, self.name, self.uri);
     self.subscribe.exception = err;
     self.exception = err;
     return self;
 };
 
 /*
-    Problem
-    @message {String}
-    return {Framework}
-*/
-Controller.prototype.problem = function(message) {
+ Problem
+ @message {String}
+ return {Framework}
+ */
+Controller.prototype.problem = function (message) {
     var self = this;
     framework.problem(message, self.name, self.uri, self.ip);
     return self;
 };
 
 /*
-    Change
-    @message {String}
-    return {Framework}
-*/
-Controller.prototype.change = function(message) {
+ Change
+ @message {String}
+ return {Framework}
+ */
+Controller.prototype.change = function (message) {
     var self = this;
     framework.change(message, self.name, self.uri, self.ip);
     return self;
 };
 
 /*
-    Add function to async waiting list
-    @name {String}
-    @waitingFor {String} :: name of async function
-    @fn {Function}
-    return {Controller}
-*/
-Controller.prototype.wait = function(name, waitingFor, fn) {
+ Add function to async waiting list
+ @name {String}
+ @waitingFor {String} :: name of async function
+ @fn {Function}
+ return {Controller}
+ */
+Controller.prototype.wait = function (name, waitingFor, fn) {
     var self = this;
     self.async.wait(name, waitingFor, fn);
     return self;
 };
 
 /*
-    Add function to async list
-    @name {String}
-    @fn {Function}
-    return {Controller}
-*/
-Controller.prototype.await = function(name, fn) {
+ Add function to async list
+ @name {String}
+ @fn {Function}
+ return {Controller}
+ */
+Controller.prototype.await = function (name, fn) {
     var self = this;
     self.async.await(name, fn);
     return self;
 };
 
 /*
-    Run async functions
-    @callback {Function}
-    return {Controller}
-*/
-Controller.prototype.complete = function(callback) {
+ Run async functions
+ @callback {Function}
+ return {Controller}
+ */
+Controller.prototype.complete = function (callback) {
     var self = this;
     return self.async.complete(callback);
 };
 
-Controller.prototype.run = function(callback) {
+Controller.prototype.run = function (callback) {
     var self = this;
     return self.async.complete(callback);
 };
@@ -6998,14 +6061,14 @@ Controller.prototype.run = function(callback) {
  * @param {String Array} flags Route flags (optional).
  * @return {Boolean}
  */
-Controller.prototype.transfer = function(url, flags) {
+Controller.prototype.transfer = function (url, flags) {
 
     var self = this;
     var length = framework.routes.web.length;
     var path = internal.routeSplit(url.trim());
 
     var isSystem = url[0] === '#';
-    var noFlag = flags === null || typeof(flags) === UNDEFINED || flags.length === 0;
+    var noFlag = flags === null || typeof(flags) === consts.UNDEFINED || flags.length === 0;
     var selected = null;
 
     for (var i = 0; i < length; i++) {
@@ -7059,15 +6122,15 @@ Controller.prototype.transfer = function(url, flags) {
 };
 
 /*
-    Cancel execute controller function
-    Note: you can cancel controller function execute in on('controller') or controller.request();
+ Cancel execute controller function
+ Note: you can cancel controller function execute in on('controller') or controller.request();
 
-    return {Controller}
-*/
-Controller.prototype.cancel = function() {
+ return {Controller}
+ */
+Controller.prototype.cancel = function () {
     var self = this;
 
-    if (typeof(self._async) !== UNDEFINED)
+    if (typeof(self._async) !== consts.UNDEFINED)
         self._async.cancel();
 
     self.isCanceled = true;
@@ -7075,22 +6138,22 @@ Controller.prototype.cancel = function() {
 };
 
 /*
-    Log
-    @arguments {Object array}
-    return {Controller};
-*/
-Controller.prototype.log = function() {
+ Log
+ @arguments {Object array}
+ return {Controller};
+ */
+Controller.prototype.log = function () {
     var self = this;
     framework.log.apply(framework, arguments);
     return self;
 };
 
 /*
-    META Tags for views
-    @arguments {String array}
-    return {Controller};
-*/
-Controller.prototype.meta = function() {
+ META Tags for views
+ @arguments {String array}
+ return {Controller};
+ */
+Controller.prototype.meta = function () {
     var self = this;
     self.repository[REPOSITORY_META_TITLE] = arguments[0] || '';
     self.repository[REPOSITORY_META_DESCRIPTION] = arguments[1] || '';
@@ -7099,7 +6162,7 @@ Controller.prototype.meta = function() {
     return self;
 };
 
-Controller.prototype.$meta = function() {
+Controller.prototype.$meta = function () {
     var self = this;
 
     if (arguments.length !== 0) {
@@ -7112,39 +6175,39 @@ Controller.prototype.$meta = function() {
 };
 
 /*
-    Set Meta Title
-    @value {String}
-    return {Controller};
-*/
-Controller.prototype.title = function(value) {
+ Set Meta Title
+ @value {String}
+ return {Controller};
+ */
+Controller.prototype.title = function (value) {
     var self = this;
     self.$title(value);
     return self;
 };
 
 /*
-    Set Meta Description
-    @value {String}
-    return {Controller};
-*/
-Controller.prototype.description = function(value) {
+ Set Meta Description
+ @value {String}
+ return {Controller};
+ */
+Controller.prototype.description = function (value) {
     var self = this;
     self.$description(value);
     return self;
 };
 
 /*
-    Set Meta Keywords
-    @value {String}
-    return {Controller};
-*/
-Controller.prototype.keywords = function(value) {
+ Set Meta Keywords
+ @value {String}
+ return {Controller};
+ */
+Controller.prototype.keywords = function (value) {
     var self = this;
     self.$keywords(value);
     return self;
 };
 
-Controller.prototype.$title = function(value) {
+Controller.prototype.$title = function (value) {
     var self = this;
 
     if (!value)
@@ -7154,7 +6217,7 @@ Controller.prototype.$title = function(value) {
     return '';
 };
 
-Controller.prototype.$description = function(value) {
+Controller.prototype.$description = function (value) {
     var self = this;
 
     if (!value)
@@ -7164,7 +6227,7 @@ Controller.prototype.$description = function(value) {
     return '';
 };
 
-Controller.prototype.$keywords = function(value) {
+Controller.prototype.$keywords = function (value) {
     var self = this;
 
     if (!value)
@@ -7175,22 +6238,22 @@ Controller.prototype.$keywords = function(value) {
 };
 
 /*
-    Sitemap generator
-    @name {String}
-    @url {String}
-    @index {Number}
-    return {Controller};
-*/
-Controller.prototype.sitemap = function(name, url, index) {
+ Sitemap generator
+ @name {String}
+ @url {String}
+ @index {Number}
+ return {Controller};
+ */
+Controller.prototype.sitemap = function (name, url, index) {
     var self = this;
 
-    if (typeof(name) === UNDEFINED)
+    if (typeof(name) === consts.UNDEFINED)
         return self.repository.sitemap || [];
 
-    if (typeof(url) === UNDEFINED)
+    if (typeof(url) === consts.UNDEFINED)
         url = self.req.url;
 
-    if (typeof(self.repository.sitemap) === UNDEFINED)
+    if (typeof(self.repository.sitemap) === consts.UNDEFINED)
         self.repository.sitemap = [];
 
     self.repository.sitemap.push({
@@ -7199,8 +6262,8 @@ Controller.prototype.sitemap = function(name, url, index) {
         index: index || self.repository.sitemap.length
     });
 
-    if (typeof(index) !== UNDEFINED && self.sitemap.length > 1) {
-        self.repository.sitemap.sort(function(a, b) {
+    if (typeof(index) !== consts.UNDEFINED && self.sitemap.length > 1) {
+        self.repository.sitemap.sort(function (a, b) {
             if (a.index < b.index)
                 return -1;
             if (a.index > b.index)
@@ -7212,59 +6275,59 @@ Controller.prototype.sitemap = function(name, url, index) {
     return self;
 };
 
-Controller.prototype.$sitemap = function(name, url, index) {
+Controller.prototype.$sitemap = function (name, url, index) {
     var self = this;
     self.sitemap.apply(self, arguments);
     return '';
 }
 
 /*
-    Module caller
-    @name {String}
-    return {Module};
-*/
-Controller.prototype.module = function(name) {
+ Module caller
+ @name {String}
+ return {Module};
+ */
+Controller.prototype.module = function (name) {
     return framework.module(name);
 };
 
 /*
-    Layout setter
-    @name {String} :: layout filename
-    return {Controller};
-*/
-Controller.prototype.layout = function(name) {
+ Layout setter
+ @name {String} :: layout filename
+ return {Controller};
+ */
+Controller.prototype.layout = function (name) {
     var self = this;
     self.layoutName = name;
     return self;
 };
 
 /*
-    Layout setter
-    @name {String} :: layout filename
-    return {Controller};
-*/
-Controller.prototype.$layout = function(name) {
+ Layout setter
+ @name {String} :: layout filename
+ return {Controller};
+ */
+Controller.prototype.$layout = function (name) {
     var self = this;
     self.layoutName = name;
     return '';
 };
 
 /*
-    Get a model
-    @name {String} :: name of controller
-    return {Object};
-*/
-Controller.prototype.model = function(name) {
+ Get a model
+ @name {String} :: name of controller
+ return {Object};
+ */
+Controller.prototype.model = function (name) {
     var self = this;
     return framework.model(name);
 };
 
 /*
-    Controller models reader
-    @name {String} :: name of controller
-    return {Object};
-*/
-Controller.prototype.models = function(name) {
+ Controller models reader
+ @name {String} :: name of controller
+ return {Object};
+ */
+Controller.prototype.models = function (name) {
     var self = this;
     return (self.controllers[name || self.name] || {}).models;
 };
@@ -7278,9 +6341,9 @@ Controller.prototype.models = function(name) {
  * @param {Function(err)} callback Optional.
  * @return {Controlller}
  */
-Controller.prototype.mail = function(address, subject, view, model, callback) {
+Controller.prototype.mail = function (address, subject, view, model, callback) {
 
-    if (typeof(model) === FUNCTION) {
+    if (typeof(model) === consts.FUNCTION) {
         callback = model;
         model = null;
     }
@@ -7294,942 +6357,63 @@ Controller.prototype.mail = function(address, subject, view, model, callback) {
 };
 
 /*
-    Controller functions reader
-    @name {String} :: name of controller
-    return {Object};
-*/
-Controller.prototype.functions = function(name) {
+ Controller functions reader
+ @name {String} :: name of controller
+ return {Object};
+ */
+Controller.prototype.functions = function (name) {
     var self = this;
     return (self.controllers[name || self.name] || {}).functions;
 };
 
 /*
-    Check if ETag or Last Modified has modified
-    @compare {String or Date}
-    @strict {Boolean} :: if strict then use equal date else use great than date (default: false)
+ Check if ETag or Last Modified has modified
+ @compare {String or Date}
+ @strict {Boolean} :: if strict then use equal date else use great than date (default: false)
 
-    if @compare === {String} compare if-none-match
-    if @compare === {Date} compare if-modified-since
+ if @compare === {String} compare if-none-match
+ if @compare === {Date} compare if-modified-since
 
-    return {Boolean};
-*/
-Controller.prototype.notModified = function(compare, strict) {
+ return {Boolean};
+ */
+Controller.prototype.notModified = function (compare, strict) {
     var self = this;
     return framework.notModified(self.req, self.res, compare, strict);
 };
 
 /*
-    Set last modified header or Etag
-    @value {String or Date}
+ Set last modified header or Etag
+ @value {String or Date}
 
-    if @value === {String} set ETag
-    if @value === {Date} set LastModified
+ if @value === {String} set ETag
+ if @value === {Date} set LastModified
 
-    return {Controller};
-*/
-Controller.prototype.setModified = function(value) {
+ return {Controller};
+ */
+Controller.prototype.setModified = function (value) {
     var self = this;
     framework.setModified(self.req, self.res, value);
     return self;
 };
 
 /*
-    Set Expires header
-    @date {Date}
+ Set Expires header
+ @date {Date}
 
-    return {Controller};
-*/
-Controller.prototype.setExpires = function(date) {
+ return {Controller};
+ */
+Controller.prototype.setExpires = function (date) {
     var self = this;
 
-    if (typeof(date) === UNDEFINED)
+    if (typeof(date) === consts.UNDEFINED)
         return self;
 
     self.res.setHeader('Expires', date.toUTCString());
     return self;
 };
 
-/*
-    Internal function for views
-    @name {String} :: filename
-    @model {Object}
-    return {String}
-*/
-Controller.prototype.$view = function(name, model) {
-    return this.$viewToggle(true, name, model);
-};
 
-/*
-    Internal function for views
-    @visible {Boolean}
-    @name {String} :: filename
-    @model {Object}
-    return {String}
-*/
-Controller.prototype.$viewToggle = function(visible, name, model) {
-    if (!visible)
-        return '';
-    var self = this;
-    var layout = self.layoutName;
-    self.layoutName = '';
-    var value = self.view(name, model, null, true);
-    self.layoutName = layout;
-    return value;
-};
-
-/*
-    Include: Angular.js CDN into the head
-    @version {String}
-    @name {String or String Array} :: optional, example: route or resource
-    return {String}
-*/
-Controller.prototype.$ng = function(name) {
-    var self = this;
-
-    var length = arguments.length;
-    if (length > 1) {
-        for (var i = 0; i < length; i++)
-            self.$ng(arguments[i]);
-        return '';
-    }
-
-    if (name instanceof Array) {
-        length = name.length;
-        for (var i = 0; i < length; i++)
-            self.$ng(name[i]);
-        return '';
-    }
-
-    var isCommon = name[0] === '~';
-
-    if (isCommon)
-        name = name.substring(1);
-
-    if (typeof(name) === UNDEFINED)
-        name = 'angular';
-
-    if (name === 'core' || name === '' || name === 'base' || name === 'main')
-        name = 'angular';
-
-    if (name !== 'angular' && name.indexOf('angular-') === -1)
-        name = 'angular-' + name;
-
-    var output = self.repository[REPOSITORY_ANGULAR] || '';
-    var script = self.$script_create((isCommon ? '/common/' + name + '.min.js' : '//cdnjs.cloudflare.com/ajax/libs/angular.js/' + self.config['angular-version'] + '/' + name + '.min.js'));
-
-    if (name === 'angular')
-        output = script + output;
-    else
-        output += script;
-
-    self.repository[REPOSITORY_ANGULAR] = output;
-    return '';
-};
-
-
-Controller.prototype.$ngCommon = function(name) {
-
-    var self = this;
-    var length = arguments.length;
-
-    if (length > 1) {
-        for (var i = 0; i < length; i++)
-            self.$ngCommon(arguments[i]);
-        return '';
-    }
-
-    if (name instanceof Array) {
-        length = name.length;
-        for (var i = 0; i < length; i++)
-            self.$ngCommon(name[i]);
-        return '';
-    }
-
-    var output = self.repository[REPOSITORY_ANGULAR_COMMON] || '';
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    var script = self.$script_create('/common/' + name);
-    output += script;
-
-    self.repository[REPOSITORY_ANGULAR_COMMON] = output;
-    return '';
-};
-
-Controller.prototype.$ngLocale = function(name) {
-
-    var self = this;
-    var length = arguments.length;
-
-    if (length > 2) {
-        for (var i = 1; i < length; i++)
-            self.$ngLocale(arguments[i]);
-        return '';
-    }
-
-    if (name instanceof Array) {
-        length = name.length;
-        for (var i = 0; i < length; i++)
-            self.$ngLocale(name[i]);
-        return '';
-    }
-
-    var output = self.repository[REPOSITORY_ANGULAR_LOCALE] || '';
-    var isLocal = name[0] === '~';
-    var extension = '';
-
-    if (isLocal)
-        name = name.substring(1);
-
-    if (name.indexOf('angular-locale_') !== -1)
-        name = name.replace('angular-locale_', '');
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        extension = EXTENSION_JS;
-
-    output += self.$script_create(isLocal ? '/i18n/angular-locale_' + name + extension : '//cdnjs.cloudflare.com/ajax/libs/angular-i18n/' + self.config['angular-i18n-version'] + '/angular-locale_' + name + extension);
-    self.repository[REPOSITORY_ANGULAR_LOCALE] = output;
-
-    return '';
-};
-
-Controller.prototype.$script_create = function(url) {
-    return '<script type="text/javascript" src="' + url + '"></script>';
-};
-
-/*
-    Include: Controller into the head
-    @name {String or String Array}
-    return {String}
-*/
-Controller.prototype.$ngController = function(name) {
-
-    var self = this;
-
-    var length = arguments.length;
-    if (length > 1) {
-        for (var i = 0; i < length; i++)
-            self.$ngController(arguments[i]);
-        return '';
-    }
-
-    if (name instanceof Array) {
-        length = name.length;
-        for (var i = 0; i < length; i++)
-            self.$ngController(name[i]);
-        return '';
-    }
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    var output = self.repository[REPOSITORY_ANGULAR_CONTROLLER] || '';
-    var isLocal = name[0] === '~';
-
-    if (isLocal)
-        name = name.substring(1);
-
-    output += self.$script_create('/controllers/' + name);
-    self.repository[REPOSITORY_ANGULAR_CONTROLLER] = output;
-
-    return '';
-};
-
-/*
-    Include: Content from file into the body
-    @name {String}
-    return {String}
-*/
-Controller.prototype.$ngTemplate = function(name, id) {
-
-    var self = this;
-
-    if (typeof(id) === UNDEFINED)
-        id = name;
-
-    if (name.lastIndexOf('.html') === -1)
-        name += '.html';
-
-    if (name[0] === '~')
-        name = name.substring(1);
-    else if (name[1] !== '/')
-        name = '/templates/' + name;
-
-    var key = 'ng-' + name;
-    var tmp = framework.temporary.views[key];
-
-    if (typeof(tmp) === UNDEFINED) {
-        var filename = utils.combine(self.config['directory-angular'], name);
-
-        if (fs.existsSync(filename))
-            tmp = fs.readFileSync(filename).toString('utf8');
-        else
-            tmp = '';
-
-        if (!self.isDebug)
-            framework.temporary.views[key] = tmp;
-    }
-
-    return '<script type="text/ng-template" id="' + id + '">' + tmp + '</script>';
-};
-
-/*
-    Include: Directive into the head
-    @name {String}
-    return {String}
-*/
-Controller.prototype.$ngDirective = function(name) {
-
-    var self = this;
-
-    var length = arguments.length;
-    if (length > 1) {
-        for (var i = 0; i < length; i++)
-            self.$ngDirective(arguments[i]);
-        return '';
-    }
-
-    if (name instanceof Array) {
-        length = name.length;
-        for (var i = 0; i < length; i++)
-            self.$ngDirective(name[i]);
-        return '';
-    }
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    var output = self.repository[REPOSITORY_ANGULAR_OTHER] || '';
-    var isLocal = name[0] === '~';
-
-    if (isLocal)
-        name = name.substring(1);
-
-    output += self.$script_create('/directives/' + name);
-    self.repository[REPOSITORY_ANGULAR_OTHER] = output;
-    return '';
-};
-
-/*
-    Include: CSS into the head
-    @name {String}
-    return {String}
-*/
-Controller.prototype.$ngStyle = function(name) {
-
-    var self = this;
-    var length = arguments.length;
-
-    if (length > 1) {
-        for (var i = 0; i < length; i++)
-            self.$ngStyle(arguments[i]);
-        return '';
-    }
-
-    if (name instanceof Array) {
-        length = name.length;
-        for (var i = 0; i < length; i++)
-            self.$ngStyle(name[i]);
-        return '';
-    }
-
-    if (name.lastIndexOf('.css') === -1)
-        name += '.css';
-
-    self.head(name);
-    return '';
-};
-
-/*
-    Include: Service into the head
-    @name {String}
-    return {String}
-*/
-Controller.prototype.$ngService = function(name) {
-
-    var self = this;
-
-    var length = arguments.length;
-    if (length > 1) {
-        for (var i = 0; i < length; i++)
-            self.$ngService(arguments[i]);
-        return '';
-    }
-
-    if (name instanceof Array) {
-        length = name.length;
-        for (var i = 0; i < length; i++)
-            self.$ngService(name[i]);
-        return '';
-    }
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    var output = self.repository[REPOSITORY_ANGULAR_OTHER] || '';
-    var isLocal = name[0] === '~';
-
-    if (isLocal)
-        name = name.substring(1);
-
-    output += self.$script_create('/services/' + name);
-    self.repository[REPOSITORY_ANGULAR_OTHER] = output;
-
-    return '';
-};
-
-/*
-    Include: Filter into the head
-    @name {String}
-    return {String}
-*/
-Controller.prototype.$ngFilter = function(name) {
-
-    var self = this;
-
-    var length = arguments.length;
-    if (length > 1) {
-        for (var i = 0; i < length; i++)
-            self.$ngFilter(arguments[i]);
-        return '';
-    }
-
-    if (name instanceof Array) {
-        length = name.length;
-        for (var i = 0; i < length; i++)
-            self.$ngFilter(name[i]);
-        return '';
-    }
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    var output = self.repository[REPOSITORY_ANGULAR_OTHER] || '';
-    var isLocal = name[0] === '~';
-
-    if (isLocal)
-        name = name.substring(1);
-
-    output += self.$script_create('/filters/' + name);
-    self.repository[REPOSITORY_ANGULAR_OTHER] = output;
-
-    return '';
-};
-
-/*
-    Include: Resource into the head
-    @name {String}
-    return {String}
-*/
-Controller.prototype.$ngResource = function(name) {
-
-    var self = this;
-
-    var length = arguments.length;
-    if (length > 1) {
-        for (var i = 0; i < length; i++)
-            self.$ngResource(arguments[i]);
-        return '';
-    }
-
-    if (name instanceof Array) {
-        length = name.length;
-        for (var i = 0; i < length; i++)
-            self.$ngResource(name[i]);
-        return '';
-    }
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    var output = self.repository[REPOSITORY_ANGULAR_OTHER] || '';
-    var isLocal = name[0] === '~';
-
-    if (isLocal)
-        name = name.substring(1);
-
-    output += self.$script_create('/resources/' + name);
-    self.repository[REPOSITORY_ANGULAR_OTHER] = output;
-
-    return '';
-};
-
-Controller.prototype.$ngInclude = function(name) {
-    var self = this;
-
-    if (name.lastIndexOf(EXTENSION_JS) === -1)
-        name += EXTENSION_JS;
-
-    return self.$script_create(name);
-};
-
-/*
-    Internal function for views
-    @name {String} :: filename
-    return {String}
-*/
-Controller.prototype.$content = function(name) {
-    return this.$contentToggle(true, name);
-};
-
-/*
-    Internal function for views
-    @visible {Boolean}
-    @name {String} :: filename
-    return {String}
-*/
-Controller.prototype.$contentToggle = function(visible, name) {
-
-    var self = this;
-
-    if (!visible)
-        return '';
-
-    if (name[0] !== '~')
-        name = self._currentContent + name;
-
-    return internal.generateContent(self, name) || '';
-};
-
-Controller.prototype.$url = function(host) {
-    var self = this;
-    return host ? self.req.hostname(self.url) : self.url;
-};
-
-/*
-    Internal function for views
-    @name {String} :: filename
-    @model {Object} :: must be an array
-    @nameEmpty {String} :: optional filename from contents
-    @repository {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.$template = function(name, model, nameEmpty, repository) {
-    var self = this;
-    return self.$templateToggle(true, name, model, nameEmpty, repository);
-};
-
-/*
-    Internal function for views
-    @bool {Boolean}
-    @name {String} :: filename
-    @model {Object}
-    @nameEmpty {String} :: optional filename from contents
-    @repository {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.$templateToggle = function(visible, name, model, nameEmpty, repository) {
-    var self = this;
-
-    if (!visible)
-        return '';
-
-    return self.template(name, model, nameEmpty, repository);
-};
-
-/*
-    Internal function for views
-    @name {String} :: filename
-    @model {Object} :: must be an array
-    @nameEmpty {String} :: optional filename from contents
-    @repository {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.$component = function(name) {
-    var self = this;
-    return self.component.apply(self, arguments);
-};
-
-Controller.prototype.$helper = function(name) {
-    var self = this;
-    return self.helper.apply(self, arguments);
-};
-
-/*
-    Internal function for views
-    @bool {Boolean}
-    @name {String} :: filename
-    @model {Object}
-    @nameEmpty {String} :: optional filename from contents
-    @repository {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.$componentToggle = function(visible, name) {
-    var self = this;
-
-    if (!visible)
-        return '';
-
-    var params = [];
-    var length = arguments.length;
-
-    for (var i = 1; i < length; i++)
-        params.push(arguments[i]);
-
-    return self.component.apply(self, arguments);
-};
-
-/*
-    Internal function for views
-    @name {String}
-    return {String}
-*/
-Controller.prototype.$checked = function(bool, charBeg, charEnd) {
-    var self = this;
-    return self.$isValue(bool, charBeg, charEnd, 'checked="checked"');
-};
-
-/*
-    Internal function for views
-    @bool {Boolean}
-    @charBeg {String}
-    @charEnd {String}
-    return {String}
-*/
-Controller.prototype.$disabled = function(bool, charBeg, charEnd) {
-    var self = this;
-    return self.$isValue(bool, charBeg, charEnd, 'disabled="disabled"');
-};
-
-/*
-    Internal function for views
-    @bool {Boolean}
-    @charBeg {String}
-    @charEnd {String}
-    return {String}
-*/
-Controller.prototype.$selected = function(bool, charBeg, charEnd) {
-    var self = this;
-    return self.$isValue(bool, charBeg, charEnd, 'selected="selected"');
-};
-
-/**
- * Fake function for assign value
- * @private
- * @param {Object} value Value to eval.
- * return {String} Returns empty string.
- */
-Controller.prototype.$set = function(value) {
-    return '';
-};
-
-/*
-    Internal function for views
-    @bool {Boolean}
-    @charBeg {String}
-    @charEnd {String}
-    return {String}
-*/
-Controller.prototype.$readonly = function(bool, charBeg, charEnd) {
-    var self = this;
-    return self.$isValue(bool, charBeg, charEnd, 'readonly="readonly"');
-};
-
-/*
-    Internal function for views
-    @name {String}
-    @value {String}
-    return {String}
-*/
-Controller.prototype.$header = function(name, value) {
-    this.header(name, value);
-    return '';
-};
-
-/*
-    Internal function for views
-    @model {Object}
-    @name {String}
-    @attr {Object} :: optional
-    return {String}
-*/
-Controller.prototype.$text = function(model, name, attr) {
-    return this.$input(model, 'text', name, attr);
-};
-
-/*
-    Internal function for views
-    @model {Object}
-    @name {String} :: optional
-    @attr {Object} :: optional
-    return {String}
-*/
-Controller.prototype.$password = function(model, name, attr) {
-    return this.$input(model, 'password', name, attr);
-};
-
-/*
-    Internal function for views
-    @model {Object}
-    @name {String}
-    @attr {Object} :: optional
-    return {String}
-*/
-Controller.prototype.$hidden = function(model, name, attr) {
-    return this.$input(model, 'hidden', name, attr);
-};
-
-/*
-    Internal function for views
-    @model {Object}
-    @name {String}
-    @attr {Object} :: optional
-    return {String}
-*/
-Controller.prototype.$radio = function(model, name, value, attr) {
-
-    if (typeof(attr) === STRING)
-        attr = {
-            label: attr
-        };
-
-    attr.value = value;
-    return this.$input(model, 'radio', name, attr);
-};
-
-/*
-    Internal function for views
-    @model {Object}
-    @name {String}
-    @attr {Object} :: optional
-    return {String}
-*/
-Controller.prototype.$checkbox = function(model, name, attr) {
-
-    if (typeof(attr) === STRING)
-        attr = {
-            label: attr
-        };
-
-    return this.$input(model, 'checkbox', name, attr);
-};
-
-/*
-    Internal function for views
-    @model {Object}
-    @name {String}
-    @attr {Object} :: optional
-    return {String}
-*/
-Controller.prototype.$textarea = function(model, name, attr) {
-
-    var builder = '<textarea';
-
-    if (typeof(attr) !== OBJECT)
-        attr = {};
-
-    builder += ' name="' + name + '" id="' + (attr.id || name) + ATTR_END;
-
-    var keys = Object.keys(attr);
-    var length = keys.length;
-
-    for (var i = 0; i < length; i++) {
-
-        switch (keys[i]) {
-            case 'name':
-            case 'id':
-                break;
-            case 'required':
-            case 'disabled':
-            case 'readonly':
-            case 'value':
-                builder += ' ' + keys[i] + '="' + keys[i] + ATTR_END;
-                break;
-            default:
-                builder += ' ' + keys[i] + '="' + attr[keys[i]].toString().encode() + ATTR_END;
-                break;
-        }
-    }
-
-    if (typeof(model) === UNDEFINED)
-        return builder + '></textarea>';
-
-    var value = (model[name] || attr.value) || '';
-    return builder + '>' + value.toString().encode() + '</textarea>';
-};
-
-/*
-    Internal function for views
-    @model {Object}
-    @type {String}
-    @name {String}
-    @attr {Object} :: optional
-    return {String}
-*/
-Controller.prototype.$input = function(model, type, name, attr) {
-
-    var builder = ['<input'];
-
-    if (typeof(attr) !== OBJECT)
-        attr = {};
-
-    var val = attr.value || '';
-
-    builder += ' type="' + type + ATTR_END;
-
-    if (type === 'radio')
-        builder += ' name="' + name + ATTR_END;
-    else
-        builder += ' name="' + name + '" id="' + (attr.id || name) + ATTR_END;
-
-    if (attr.autocomplete) {
-        if (attr.autocomplete === true || attr.autocomplete === 'on')
-            builder += ' autocomplete="on"';
-        else
-            builder += ' autocomplete="off"';
-    }
-
-    var keys = Object.keys(attr);
-    var length = keys.length;
-
-    for (var i = 0; i < length; i++) {
-
-        switch (keys[i]) {
-            case 'name':
-            case 'id':
-            case 'type':
-            case 'autocomplete':
-            case 'checked':
-            case 'value':
-            case 'label':
-                break;
-            case 'required':
-            case 'disabled':
-            case 'readonly':
-            case 'autofocus':
-                builder += ' ' + keys[i] + '="' + keys[i] + ATTR_END;
-                break;
-            default:
-                builder += ' ' + keys[i] + '="' + attr[keys[i]].toString().encode() + ATTR_END;
-                break;
-        }
-    }
-
-    var value = '';
-
-    if (typeof(model) !== UNDEFINED) {
-        value = model[name];
-
-        if (type === 'checkbox') {
-            if (value === '1' || value === 'true' || value === true)
-                builder += ' checked="checked"';
-
-            value = val || '1';
-        }
-
-        if (type === 'radio') {
-
-            val = (val || '').toString();
-
-            if (value.toString() === val)
-                builder += ' checked="checked"';
-
-            value = val || '';
-        }
-    }
-
-    if (typeof(value) !== UNDEFINED)
-        builder += ' value="' + (value || '').toString().encode() + ATTR_END;
-    else
-        builder += ' value="' + (attr.value || '').toString().encode() + ATTR_END;
-
-    builder += ' />';
-
-    if (attr.label)
-        return '<label>' + builder + ' <span>' + attr.label + '</span></label>';
-
-    return builder;
-};
-
-/*
-    Internal function for views
-    @arguments {String}
-    return {String}
-*/
-Controller.prototype.$dns = function(value) {
-
-    var builder = '';
-    var self = this;
-    var length = arguments.length;
-
-    for (var i = 0; i < length; i++)
-        builder += '<link rel="dns-prefetch" href="' + self._prepareHost(arguments[i] || '') + '" />';
-
-    self.head(builder);
-    return '';
-};
-
-/*
-    Internal function for views
-    @arguments {String}
-    return {String}
-*/
-Controller.prototype.$prefetch = function() {
-
-    var builder = '';
-    var self = this;
-    var length = arguments.length;
-
-    for (var i = 0; i < length; i++)
-        builder += '<link rel="prefetch" href="' + self._prepareHost(arguments[i] || '') + '" />';
-
-    self.head(builder);
-    return '';
-};
-
-/*
-    Internal function for views
-    @arguments {String}
-    return {String}
-*/
-Controller.prototype.$prerender = function(value) {
-
-    var builder = '';
-    var self = this;
-    var length = arguments.length;
-
-    for (var i = 0; i < length; i++)
-        builder += '<link rel="prerender" href="' + self._prepareHost(arguments[i] || '') + '" />';
-
-    self.head(builder);
-    return '';
-};
-
-/*
-    Internal function for views
-    @value {String}
-    return {String}
-*/
-Controller.prototype.$next = function(value) {
-    var self = this;
-    self.head('<link rel="next" href="' + self._prepareHost(value || '') + '" />');
-    return '';
-};
-
-/*
-    Internal function for views
-    @arguments {String}
-    return {String}
-*/
-Controller.prototype.$prev = function(value) {
-    var self = this;
-    self.head('<link rel="prev" href="' + self._prepareHost(value || '') + '" />');
-    return '';
-};
-
-/*
-    Internal function for views
-    @arguments {String}
-    return {String}
-*/
-Controller.prototype.$canonical = function(value) {
-    var self = this;
-    self.head('<link rel="canonical" href="' + self._prepareHost(value || '') + '" />');
-    return '';
-};
-
-Controller.prototype._prepareHost = function(value) {
+Controller.prototype._prepareHost = function (value) {
     var tmp = value.substring(0, 5);
 
     if (tmp !== 'http:' && tmp !== 'https://') {
@@ -8241,11 +6425,11 @@ Controller.prototype._prepareHost = function(value) {
 };
 
 /*
-    Internal function for views
-    @arguments {String}
-    return {String}
-*/
-Controller.prototype.head = function() {
+ Internal function for views
+ @arguments {String}
+ return {String}
+ */
+Controller.prototype.head = function () {
 
     var self = this;
 
@@ -8274,7 +6458,7 @@ Controller.prototype.head = function() {
         var tmp = val.substring(0, 7);
         var isRoute = (tmp[0] !== '/' && tmp[1] !== '/') && tmp !== 'http://' && tmp !== 'https:/';
 
-        if (val.lastIndexOf(EXTENSION_JS) !== -1)
+        if (val.lastIndexOf(consts.EXTENSION_JS) !== -1)
             output += '<script type="text/javascript" src="' + (isRoute ? self.routeJS(val) : val) + '"></script>';
         else if (val.lastIndexOf('.css') !== -1)
             output += '<link type="text/css" rel="stylesheet" href="' + (isRoute ? self.routeCSS(val) : val) + '" />';
@@ -8285,18 +6469,18 @@ Controller.prototype.head = function() {
     return self;
 };
 
-Controller.prototype.$head = function() {
+Controller.prototype.$head = function () {
     var self = this;
     self.head.apply(self, arguments);
     return '';
 };
 
 /*
-    Internal function for views
-    @arguments {String}
-    return {Controller}
-*/
-Controller.prototype.place = function(name) {
+ Internal function for views
+ @arguments {String}
+ return {Controller}
+ */
+Controller.prototype.place = function (name) {
 
     var self = this;
 
@@ -8316,7 +6500,7 @@ Controller.prototype.place = function(name) {
             continue;
         }
 
-        if (val.lastIndexOf(EXTENSION_JS) === -1) {
+        if (val.lastIndexOf(consts.EXTENSION_JS) === -1) {
             output += val;
             continue;
         }
@@ -8330,7 +6514,7 @@ Controller.prototype.place = function(name) {
     return self;
 };
 
-Controller.prototype.$place = function() {
+Controller.prototype.$place = function () {
     var self = this;
     if (arguments.length === 1)
         return self.place.apply(self, arguments);
@@ -8339,14 +6523,14 @@ Controller.prototype.$place = function() {
 };
 
 /*
-    Internal function for views
-    @bool {Boolean}
-    @charBeg {String}
-    @charEnd {String}
-    @value {String}
-    return {String}
-*/
-Controller.prototype.$isValue = function(bool, charBeg, charEnd, value) {
+ Internal function for views
+ @bool {Boolean}
+ @charBeg {String}
+ @charEnd {String}
+ @value {String}
+ return {String}
+ */
+Controller.prototype.$isValue = function (bool, charBeg, charEnd, value) {
     if (!bool)
         return '';
 
@@ -8357,19 +6541,19 @@ Controller.prototype.$isValue = function(bool, charBeg, charEnd, value) {
 };
 
 /*
-    Internal function for views
-    @date {String or Date or Number} :: if {String} date format must has YYYY-MM-DD HH:MM:SS, {Number} represent Ticks (.getTime())
-    return {String} :: empty string
-*/
-Controller.prototype.$modified = function(value) {
+ Internal function for views
+ @date {String or Date or Number} :: if {String} date format must has YYYY-MM-DD HH:MM:SS, {Number} represent Ticks (.getTime())
+ return {String} :: empty string
+ */
+Controller.prototype.$modified = function (value) {
 
     var self = this;
     var type = typeof(value);
     var date;
 
-    if (type === NUMBER) {
+    if (type === consts.NUMBER) {
         date = new Date(value);
-    } else if (type === STRING) {
+    } else if (type === consts.STRING) {
 
         var d = value.split(' ');
 
@@ -8394,7 +6578,7 @@ Controller.prototype.$modified = function(value) {
     } else if (utils.isDate(value))
         date = value;
 
-    if (typeof(date) === UNDEFINED)
+    if (typeof(date) === consts.UNDEFINED)
         return '';
 
     self.setModified(date);
@@ -8402,231 +6586,16 @@ Controller.prototype.$modified = function(value) {
 };
 
 /*
-    Internal function for views
-    @value {String}
-    return {String} :: empty string
-*/
-Controller.prototype.$etag = function(value) {
+ Internal function for views
+ @value {String}
+ return {String} :: empty string
+ */
+Controller.prototype.$etag = function (value) {
     this.setModified(value);
     return '';
 };
 
-/*
-    Internal function for views
-    @arr {Array} :: array of object or plain value array
-    @selected {Object} :: value for selecting item
-    @name {String} :: name of name property, default: name
-    @value {String} :: name of value property, default: value
-    return {String}
-*/
-Controller.prototype.$options = function(arr, selected, name, value) {
-
-    var self = this;
-    var type = typeof(arr);
-
-    if (arr === null || typeof(arr) === UNDEFINED)
-        return '';
-
-    var isObject = false;
-    var tmp = null;
-
-    if (!(arr instanceof Array) && type === OBJECT) {
-        isObject = true;
-        tmp = arr;
-        arr = Object.keys(arr);
-    }
-
-    if (!utils.isArray(arr))
-        arr = [arr];
-
-    selected = selected || '';
-
-    var options = '';
-
-    if (!isObject) {
-        if (typeof(value) === UNDEFINED)
-            value = value || name || 'value';
-
-        if (typeof(name) === UNDEFINED)
-            name = name || 'name';
-    }
-
-    var isSelected = false;
-    var length = 0;
-
-    length = arr.length;
-
-    for (var i = 0; i < length; i++) {
-
-        var o = arr[i];
-        var type = typeof(o);
-        var text = '';
-        var val = '';
-        var sel = false;
-
-        if (isObject) {
-            if (name === true) {
-                val = tmp[o];
-                text = o;
-                if (value === null)
-                    value = '';
-            } else {
-                val = o;
-                text = tmp[o];
-                if (text === null)
-                    text = '';
-            }
-
-        } else if (type === OBJECT) {
-
-            text = (o[name] || '');
-            val = (o[value] || '');
-
-            if (typeof(text) === FUNCTION)
-                text = text(i);
-
-            if (typeof(val) === FUNCTION)
-                val = val(i, text);
-
-        } else {
-            text = o;
-            val = o;
-        }
-
-        if (!isSelected) {
-            sel = val == selected;
-            isSelected = sel;
-        }
-
-        options += '<option value="' + val.toString().encode() + '"' + (sel ? ' selected="selected"' : '') + '>' + text.toString().encode() + '</option>';
-    }
-
-    return options;
-};
-
-/*
-    Append <script> TAG
-    @name {String} :: filename
-    return {String}
-*/
-Controller.prototype.$script = function(name) {
-    return this.routeJS(name, true);
-};
-
-Controller.prototype.$js = function(name) {
-    return this.routeJS(name, true);
-};
-
-/*
-    Appedn style <link> TAG
-    @name {String} :: filename
-    return {String}
-*/
-Controller.prototype.$css = function(name) {
-    return this.routeCSS(name, true);
-};
-
-/*
-    Append <img> TAG
-    @name {String} :: filename
-    @width {Number} :: optional
-    @height {Number} :: optional
-    @alt {String} :: optional
-    @className {String} :: optional
-    return {String}
-*/
-Controller.prototype.$image = function(name, width, height, alt, className) {
-
-    var style = '';
-
-    if (typeof(width) === OBJECT) {
-        height = width.height;
-        alt = width.alt;
-        className = width.class;
-        style = width.style;
-        width = width.width;
-    }
-
-    var builder = '<img src="' + this.routeImage(name) + ATTR_END;
-
-    if (width > 0)
-        builder += ' width="' + width + ATTR_END;
-
-    if (height > 0)
-        builder += ' height="' + height + ATTR_END;
-
-    if (alt)
-        builder += ' alt="' + alt.encode() + ATTR_END;
-
-    if (className)
-        builder += ' class="' + className + ATTR_END;
-
-    if (style)
-        builder += ' style="' + style + ATTR_END;
-
-    return builder + ' border="0" />';
-};
-
-/*
-    Append <a> TAG
-    @filename {String}
-    @innerHTML {String}
-    @downloadName {String}
-    @className {String} :: optional
-    return {String}
-*/
-Controller.prototype.$download = function(filename, innerHTML, downloadName, className) {
-    var builder = '<a href="' + framework.routeDownload(filename) + ATTR_END;
-
-    if (downloadName)
-        builder += ' download="' + downloadName + ATTR_END;
-
-    if (className)
-        builder += ' class="' + className + ATTR_END;
-
-    return builder + '>' + (innerHTML || filename) + '</a>';
-};
-
-Controller.prototype.$json = function(obj, name, beautify) {
-
-    if (typeof(name) === BOOLEAN) {
-        var tmp = name;
-        name = beautify;
-        beautify = name;
-    }
-
-    var value = beautify ? JSON.stringify(obj, null, 4) : JSON.stringify(obj);
-
-    if (!name)
-        return value;
-
-    return '<script type="application/json" id="' + name + '">' + value + '</script>';
-};
-
-/*
-    Append favicon TAG
-    @name {String} :: filename
-    return {String}
-*/
-Controller.prototype.$favicon = function(name) {
-    var self = this;
-    var contentType = 'image/x-icon';
-
-    if (typeof(name) === UNDEFINED)
-        name = 'favicon.ico';
-
-    if (name.lastIndexOf('.png') !== -1)
-        contentType = 'image/png';
-
-    if (name.lastIndexOf('.gif') !== -1)
-        contentType = 'image/gif';
-
-    name = framework.routeStatic('/' + name);
-
-    return '<link rel="shortcut icon" href="' + name + '" type="' + contentType + '" /><link rel="icon" href="' + name + '" type="' + contentType + '" />';
-};
-
-Controller.prototype._routeHelper = function(current, name, fn) {
+Controller.prototype._routeHelper = function (current, name, fn) {
 
     var self = this;
 
@@ -8643,15 +6612,15 @@ Controller.prototype._routeHelper = function(current, name, fn) {
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    @tag {Boolean} :: optional, append tag? default: false
-    return {String}
-*/
-Controller.prototype.routeJS = function(name, tag) {
+ Static file routing
+ @name {String} :: filename
+ @tag {Boolean} :: optional, append tag? default: false
+ return {String}
+ */
+Controller.prototype.routeJS = function (name, tag) {
     var self = this;
 
-    if (typeof(name) === UNDEFINED)
+    if (typeof(name) === consts.UNDEFINED)
         name = 'default.js';
 
     var url = self._routeHelper(self._currentJS, name, framework.routeJS);
@@ -8659,15 +6628,15 @@ Controller.prototype.routeJS = function(name, tag) {
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    @tag {Boolean} :: optional, append tag? default: false
-    return {String}
-*/
-Controller.prototype.routeCSS = function(name, tag) {
+ Static file routing
+ @name {String} :: filename
+ @tag {Boolean} :: optional, append tag? default: false
+ return {String}
+ */
+Controller.prototype.routeCSS = function (name, tag) {
     var self = this;
 
-    if (typeof(name) === UNDEFINED)
+    if (typeof(name) === consts.UNDEFINED)
         name = 'default.css';
 
     var url = self._routeHelper(self._currentCSS, name, framework.routeCSS);
@@ -8675,74 +6644,74 @@ Controller.prototype.routeCSS = function(name, tag) {
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Controller.prototype.routeImage = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Controller.prototype.routeImage = function (name) {
     var self = this;
     return self._routeHelper(self._currentImage, name, framework.routeImage);
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Controller.prototype.routeVideo = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Controller.prototype.routeVideo = function (name) {
     var self = this;
     return self._routeHelper(self._currentVideo, name, framework.routeVideo);
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Controller.prototype.routeFont = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Controller.prototype.routeFont = function (name) {
     var self = this;
     return framework.routeFont(name);
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Controller.prototype.routeDownload = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Controller.prototype.routeDownload = function (name) {
     var self = this;
     return self._routeHelper(self._currentDownload, name, framework.routeDownload);
 };
 
 /*
-    Static file routing
-    @name {String} :: filename
-    return {String}
-*/
-Controller.prototype.routeStatic = function(name) {
+ Static file routing
+ @name {String} :: filename
+ return {String}
+ */
+Controller.prototype.routeStatic = function (name) {
     var self = this;
     return framework.routeStatic(name);
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.$currentJS = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.$currentJS = function (path) {
     this._currentJS = path && path.length > 0 ? path : '';
     return '';
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.$currentView = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.$currentView = function (path) {
     var self = this;
 
-    if (typeof(path) === UNDEFINED) {
+    if (typeof(path) === consts.UNDEFINED) {
         self._currentView = self.name[0] !== '#' && self.name !== 'default' ? '/' + self.name + '/' : '';
         return self;
     }
@@ -8752,31 +6721,31 @@ Controller.prototype.$currentView = function(path) {
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.$currentTemplate = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.$currentTemplate = function (path) {
     this._currentTemplate = path && path.length > 0 ? utils.path(path) : '';
     return '';
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.$currentContent = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.$currentContent = function (path) {
     this._currentContent = path && path.length > 0 ? utils.path(path) : '';
     return '';
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.currentView = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.currentView = function (path) {
     var self = this;
     self.$currentView(path);
     self._defaultView = self._currentView;
@@ -8784,11 +6753,11 @@ Controller.prototype.currentView = function(path) {
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.currentTemplate = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.currentTemplate = function (path) {
     var self = this;
     self.$currentTemplate(path);
     self._defaultTemplate = self._currentTemplate;
@@ -8796,11 +6765,11 @@ Controller.prototype.currentTemplate = function(path) {
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.currentContent = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.currentContent = function (path) {
     var self = this;
     self.$currentContent(path);
     self._defaultContent = self._currentContent;
@@ -8808,51 +6777,51 @@ Controller.prototype.currentContent = function(path) {
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.$currentCSS = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.$currentCSS = function (path) {
     this._currentCSS = path && path.length > 0 ? path : '';
     return '';
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.$currentImage = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.$currentImage = function (path) {
     this._currentImage = path && path.length > 0 ? path : '';
     return '';
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.$currentVideo = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.$currentVideo = function (path) {
     this._currentVideo = path && path.length > 0 ? path : '';
     return '';
 };
 
 /*
-    Internal
-    @path {String} :: add path to route path
-    return {String}
-*/
-Controller.prototype.$currentDownload = function(path) {
+ Internal
+ @path {String} :: add path to route path
+ return {String}
+ */
+Controller.prototype.$currentDownload = function (path) {
     this._currentDownload = path && path.length > 0 ? path : '';
     return '';
 };
 
 /*
-    Set current image path
-    @path {String}
-    return {Controller}
-*/
-Controller.prototype.currentImage = function(path) {
+ Set current image path
+ @path {String}
+ return {Controller}
+ */
+Controller.prototype.currentImage = function (path) {
     var self = this;
     self.$currentImage(path);
     self._defaultImage = self._currentImage;
@@ -8860,11 +6829,11 @@ Controller.prototype.currentImage = function(path) {
 };
 
 /*
-    Set current download path
-    @path {String}
-    return {Controller}
-*/
-Controller.prototype.currentDownload = function(path) {
+ Set current download path
+ @path {String}
+ return {Controller}
+ */
+Controller.prototype.currentDownload = function (path) {
     var self = this;
     self.$currentDownload(path);
     self._defaultDownload = self._currentDownload;
@@ -8872,11 +6841,11 @@ Controller.prototype.currentDownload = function(path) {
 };
 
 /*
-    Set current CSS path
-    @path {String}
-    return {Controller}
-*/
-Controller.prototype.currentCSS = function(path) {
+ Set current CSS path
+ @path {String}
+ return {Controller}
+ */
+Controller.prototype.currentCSS = function (path) {
     var self = this;
     self.$currentCSS(path);
     self._defaultCSS = self._currentCSS;
@@ -8884,11 +6853,11 @@ Controller.prototype.currentCSS = function(path) {
 };
 
 /*
-    Set current JS path
-    @path {String}
-    return {Controller}
-*/
-Controller.prototype.currentJS = function(path) {
+ Set current JS path
+ @path {String}
+ return {Controller}
+ */
+Controller.prototype.currentJS = function (path) {
     var self = this;
     self.$currentJS(path);
     self._defaultJS = self._currentJS;
@@ -8896,11 +6865,11 @@ Controller.prototype.currentJS = function(path) {
 };
 
 /*
-    Set current video path
-    @path {String}
-    return {Controller}
-*/
-Controller.prototype.currentVideo = function(path) {
+ Set current video path
+ @path {String}
+ return {Controller}
+ */
+Controller.prototype.currentVideo = function (path) {
     var self = this;
     self.$currentVideo(path);
     self._defaultVideo = self._currentVideo;
@@ -8908,100 +6877,15 @@ Controller.prototype.currentVideo = function(path) {
 };
 
 /*
-    Resource reader
-    @name {String} :: filename
-    @key {String}
-    return {String}
-*/
-Controller.prototype.resource = function(name, key) {
-    var self = this;
+ Resource reader
+ @name {String} :: filename
+ @key {String}
+ return {String}
+ */
+Controller.prototype.resource = function (name, key) {
     return framework.resource(name, key);
 };
 
-/*
-    Render template to string
-    @name {String} :: filename
-    @model {Object}
-    @nameEmpty {String} :: filename for empty Contents
-    @repository {Object}
-    @cb {Function} :: callback(string)
-    return {String}
-*/
-Controller.prototype.template = function(name, model, nameEmpty, repository) {
-
-    var self = this;
-
-    if (typeof(nameEmpty) === OBJECT) {
-        repository = nameEmpty;
-        nameEmpty = '';
-    }
-
-    if (typeof(model) === UNDEFINED || model === null || model.length === 0) {
-
-        if (typeof(nameEmpty) !== UNDEFINED && nameEmpty.length > 0)
-            return self.$content(nameEmpty);
-
-        return '';
-    }
-
-    if (typeof(repository) === UNDEFINED)
-        repository = self.repository;
-
-    var plus = '';
-
-    if (name[0] !== '~')
-        plus = self._currentTemplate;
-
-    try {
-        return internal.generateTemplate(self, name, model, repository, plus);
-    } catch (ex) {
-        self.error(new Error('Template: ' + name + ' - ' + ex.toString()));
-        return '';
-    }
-};
-
-/*
-    Render component to string
-    @name {String}
-    return {String}
-*/
-Controller.prototype.component = function(name) {
-    var self = this;
-    var component = framework.component(name);
-
-    if (component === null)
-        return '';
-
-    var length = arguments.length;
-    var params = [];
-
-    for (var i = 1; i < length; i++)
-        params.push(arguments[i]);
-
-    var output = component.render.apply(self, params);
-    return output;
-};
-
-/*
-    Render component to string
-    @name {String}
-    return {String}
-*/
-Controller.prototype.helper = function(name) {
-    var self = this;
-    var helper = framework.helpers[name] || null;
-
-    if (helper === null)
-        return '';
-
-    var length = arguments.length;
-    var params = [];
-
-    for (var i = 1; i < length; i++)
-        params.push(arguments[i]);
-
-    return helper.apply(self, params);
-};
 
 /**
  * Response JSON
@@ -9011,13 +6895,13 @@ Controller.prototype.helper = function(name) {
  * @param {Function(key, value)} replacer JSON replacer.
  * @return {Controller}
  */
-Controller.prototype.json = function(obj, headers, beautify, replacer) {
+Controller.prototype.json = function (obj, headers, beautify, replacer) {
     var self = this;
 
     if (self.res.success || !self.isConnected)
         return self;
 
-    if (typeof(headers) === BOOLEAN) {
+    if (typeof(headers) === consts.BOOLEAN) {
         replacer = beautify;
         beautify = headers;
     }
@@ -9042,10 +6926,10 @@ Controller.prototype.json = function(obj, headers, beautify, replacer) {
 };
 
 /*
-    Set custom response
-    return {Boolean}
-*/
-Controller.prototype.custom = function() {
+ Set custom response
+ return {Boolean}
+ */
+Controller.prototype.custom = function () {
 
     var self = this;
 
@@ -9060,26 +6944,26 @@ Controller.prototype.custom = function() {
 };
 
 /*
-    Manul clear request data
-    @enable {Boolean} :: enable manual clear - controller.clear()
-    return {Controller}
-*/
-Controller.prototype.noClear = function(enable) {
+ Manul clear request data
+ @enable {Boolean} :: enable manual clear - controller.clear()
+ return {Controller}
+ */
+Controller.prototype.noClear = function (enable) {
     var self = this;
-    self.req._manual = typeof(enable) === UNDEFINED ? true : enable;
+    self.req._manual = typeof(enable) === consts.UNDEFINED ? true : enable;
     return self;
 };
 
 /*
-    Response JSON ASYNC
-    @obj {Object}
-    @headers {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.jsonAsync = function(obj, headers, beautify) {
+ Response JSON ASYNC
+ @obj {Object}
+ @headers {Object} :: optional
+ return {Controller};
+ */
+Controller.prototype.jsonAsync = function (obj, headers, beautify) {
     var self = this;
 
-    var fn = function() {
+    var fn = function () {
         self.json(obj, headers, beautify);
     };
 
@@ -9088,41 +6972,41 @@ Controller.prototype.jsonAsync = function(obj, headers, beautify) {
 };
 
 /*
-    !!! pell-mell
-    Response custom content or Return content from Contents
-    @contentBody {String}
-    @contentType {String} :: optional
-    @headers {Object} :: optional
-    return {Controller or String}; :: return String when contentType is undefined
-*/
-Controller.prototype.content = function(contentBody, contentType, headers) {
+ !!! pell-mell
+ Response custom content or Return content from Contents
+ @contentBody {String}
+ @contentType {String} :: optional
+ @headers {Object} :: optional
+ return {Controller or String}; :: return String when contentType is undefined
+ */
+Controller.prototype.content = function (contentBody, contentType, headers) {
 
     var self = this;
     var type = typeof(contentType);
 
-    if (type === UNDEFINED) {
-        self.content(self.$contentToggle(true, contentBody), CONTENTTYPE_TEXTHTML, headers);
+    if (type === consts.UNDEFINED) {
+        self.content(self.$contentToggle(true, contentBody), consts.CONTENTTYPE_TEXTHTML, headers);
         return;
     }
 
-    if (type === BOOLEAN)
+    if (type === consts.BOOLEAN)
         return self.$contentToggle(true, contentBody);
 
     if (self.res.success || !self.isConnected)
         return self;
 
     self.subscribe.success();
-    framework.responseContent(self.req, self.res, self.status, contentBody, contentType || CONTENTTYPE_TEXTPLAIN, self.config['allow-gzip'], headers);
+    framework.responseContent(self.req, self.res, self.status, contentBody, contentType || consts.CONTENTTYPE_TEXTPLAIN, self.config['allow-gzip'], headers);
     return self;
 };
 
 /*
-    Response plain text
-    @contentBody {String}
-    @headers {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.plain = function(contentBody, headers) {
+ Response plain text
+ @contentBody {String}
+ @headers {Object} :: optional
+ return {Controller};
+ */
+Controller.prototype.plain = function (contentBody, headers) {
     var self = this;
 
     if (self.res.success || !self.isConnected)
@@ -9130,29 +7014,29 @@ Controller.prototype.plain = function(contentBody, headers) {
 
     var type = typeof(contentBody);
 
-    if (type === UNDEFINED)
+    if (type === consts.UNDEFINED)
         contentBody = '';
-    else if (type === OBJECT)
+    else if (type === consts.OBJECT)
         contentBody = contentBody === null ? '' : JSON.stringify(contentBody, null, 4);
     else
         contentBody = contentBody === null ? '' : contentBody.toString();
 
     self.subscribe.success();
-    framework.responseContent(self.req, self.res, self.status, contentBody, CONTENTTYPE_TEXTPLAIN, self.config['allow-gzip'], headers);
+    framework.responseContent(self.req, self.res, self.status, contentBody, consts.CONTENTTYPE_TEXTPLAIN, self.config['allow-gzip'], headers);
     framework.stats.response.plain++;
 
     if (self.precache)
-        self.precache(contentBody, CONTENTTYPE_TEXTPLAIN, headers);
+        self.precache(contentBody, consts.CONTENTTYPE_TEXTPLAIN, headers);
 
     return self;
 };
 
 /*
-    Response empty content
-    @headers {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.empty = function(headers) {
+ Response empty content
+ @headers {Object} :: optional
+ return {Controller};
+ */
+Controller.prototype.empty = function (headers) {
     var self = this;
 
     if (self.res.success || !self.isConnected)
@@ -9160,19 +7044,19 @@ Controller.prototype.empty = function(headers) {
 
     var code = 204;
 
-    if (typeof(headers) === NUMBER) {
+    if (typeof(headers) === consts.NUMBER) {
         code = headers;
         headers = null;
     }
 
     self.subscribe.success();
-    framework.responseContent(self.req, self.res, code, '', CONTENTTYPE_TEXTPLAIN, false, headers);
+    framework.responseContent(self.req, self.res, code, '', consts.CONTENTTYPE_TEXTPLAIN, false, headers);
     framework.stats.response.empty++;
 
     return self;
 };
 
-Controller.prototype.destroy = function() {
+Controller.prototype.destroy = function () {
     var self = this;
 
     if (self.res.success || !self.isConnected)
@@ -9186,13 +7070,13 @@ Controller.prototype.destroy = function() {
 };
 
 /*
-    Response a file
-    @filename {String}
-    @downloadName {String} :: optional
-    @headers {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.file = function(filename, downloadName, headers) {
+ Response a file
+ @filename {String}
+ @downloadName {String} :: optional
+ @headers {Object} :: optional
+ return {Controller};
+ */
+Controller.prototype.file = function (filename, downloadName, headers) {
     var self = this;
 
     if (self.res.success || !self.isConnected)
@@ -9210,20 +7094,20 @@ Controller.prototype.file = function(filename, downloadName, headers) {
 };
 
 /*
-    Response an image
-    @filename {String or Stream}
-    @fnProcess {Function} :: function(FrameworkImage) {}
-    @headers {Object} :: optional, additional headers
-    @useImageMagick {Boolean} :: optional, use ImageMagick (otherwise is used GraphicsMagick), default false
-    return {Framework}
-*/
-Controller.prototype.image = function(filename, fnProcess, headers, useImageMagick) {
+ Response an image
+ @filename {String or Stream}
+ @fnProcess {Function} :: function(FrameworkImage) {}
+ @headers {Object} :: optional, additional headers
+ @useImageMagick {Boolean} :: optional, use ImageMagick (otherwise is used GraphicsMagick), default false
+ return {Framework}
+ */
+Controller.prototype.image = function (filename, fnProcess, headers, useImageMagick) {
     var self = this;
 
     if (self.res.success || !self.isConnected)
         return self;
 
-    if (typeof(filename) === STRING) {
+    if (typeof(filename) === consts.STRING) {
         if (filename[0] === '~')
             filename = '.' + filename.substring(1);
         else
@@ -9237,16 +7121,16 @@ Controller.prototype.image = function(filename, fnProcess, headers, useImageMagi
 };
 
 /*
-    Response Async file
-    @filename {String}
-    @downloadName {String} :: optional
-    @headers {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.fileAsync = function(filename, downloadName, headers) {
+ Response Async file
+ @filename {String}
+ @downloadName {String} :: optional
+ @headers {Object} :: optional
+ return {Controller};
+ */
+Controller.prototype.fileAsync = function (filename, downloadName, headers) {
     var self = this;
 
-    var fn = function() {
+    var fn = function () {
         self.file(filename, downloadName, headers);
     };
 
@@ -9255,14 +7139,14 @@ Controller.prototype.fileAsync = function(filename, downloadName, headers) {
 };
 
 /*
-    Response stream
-    @contentType {String}
-    @stream {ReadStream}
-    @downloadName {String} :: optional
-    @headers {Object} :: optional key/value
-    return {Controller}
-*/
-Controller.prototype.stream = function(contentType, stream, downloadName, headers) {
+ Response stream
+ @contentType {String}
+ @stream {ReadStream}
+ @downloadName {String} :: optional
+ @headers {Object} :: optional key/value
+ return {Controller}
+ */
+Controller.prototype.stream = function (contentType, stream, downloadName, headers) {
     var self = this;
 
     if (self.res.success || !self.isConnected)
@@ -9278,15 +7162,15 @@ Controller.prototype.stream = function(contentType, stream, downloadName, header
  * @param  {String} problem Description of problem (optional)
  * @return {FrameworkController}
  */
-Controller.prototype.throw400 = function(problem) {
+Controller.prototype.throw400 = function (problem) {
     return this.view400(problem);
 };
 
 /*
-    Response 400
-    return {Controller};
-*/
-Controller.prototype.view400 = function(problem) {
+ Response 400
+ return {Controller};
+ */
+Controller.prototype.view400 = function (problem) {
     var self = this;
 
     if (problem && problem.length > 0)
@@ -9308,15 +7192,15 @@ Controller.prototype.view400 = function(problem) {
  * @param  {String} problem Description of problem (optional)
  * @return {FrameworkController}
  */
-Controller.prototype.throw401 = function(problem) {
+Controller.prototype.throw401 = function (problem) {
     return this.view401(problem);
 };
 
 /*
-    Response 401
-    return {Controller};
-*/
-Controller.prototype.view401 = function(problem) {
+ Response 401
+ return {Controller};
+ */
+Controller.prototype.view401 = function (problem) {
     var self = this;
 
     if (problem && problem.length > 0)
@@ -9338,15 +7222,15 @@ Controller.prototype.view401 = function(problem) {
  * @param  {String} problem Description of problem (optional)
  * @return {FrameworkController}
  */
-Controller.prototype.throw403 = function(problem) {
+Controller.prototype.throw403 = function (problem) {
     return this.view403(problem);
 };
 
 /*
-    Response 403
-    return {Controller};
-*/
-Controller.prototype.view403 = function(problem) {
+ Response 403
+ return {Controller};
+ */
+Controller.prototype.view403 = function (problem) {
     var self = this;
 
     if (problem && problem.length > 0)
@@ -9368,14 +7252,14 @@ Controller.prototype.view403 = function(problem) {
  * @param  {String} problem Description of problem (optional)
  * @return {FrameworkController}
  */
-Controller.prototype.throw404 = function(problem) {
+Controller.prototype.throw404 = function (problem) {
     return this.view404(problem);
 };
 /*
-    Response 404
-    return {Controller};
-*/
-Controller.prototype.view404 = function(problem) {
+ Response 404
+ return {Controller};
+ */
+Controller.prototype.view404 = function (problem) {
     var self = this;
 
     if (problem && problem.length > 0)
@@ -9393,14 +7277,14 @@ Controller.prototype.view404 = function(problem) {
 };
 
 /*
-    Response 500
-    @error {String}
-    return {Controller};
-*/
-Controller.prototype.view500 = function(error) {
+ Response 500
+ @error {String}
+ return {Controller};
+ */
+Controller.prototype.view500 = function (error) {
     var self = this;
 
-    framework.error(typeof(error) === STRING ? new Error(error) : error, self.name, self.req.uri);
+    framework.error(typeof(error) === consts.STRING ? new Error(error) : error, self.name, self.req.uri);
 
     if (self.res.success || !self.isConnected)
         return self;
@@ -9419,7 +7303,7 @@ Controller.prototype.view500 = function(error) {
  * @param  {Error} error
  * @return {FrameworkController}
  */
-Controller.prototype.throw500 = function(error) {
+Controller.prototype.throw500 = function (error) {
     return this.view500(error);
 };
 
@@ -9428,7 +7312,7 @@ Controller.prototype.throw500 = function(error) {
  * @param  {String} problem Description of the problem (optional)
  * @return {FrameworkController}
  */
-Controller.prototype.view501 = function(problem) {
+Controller.prototype.view501 = function (problem) {
     var self = this;
 
     if (problem && problem.length > 0)
@@ -9450,17 +7334,17 @@ Controller.prototype.view501 = function(problem) {
  * @param  {String} problem Description of the problem (optional)
  * @return {FrameworkController}
  */
-Controller.prototype.throw501 = function(problem) {
+Controller.prototype.throw501 = function (problem) {
     return this.view501(problem);
 };
 
 /*
-    Response redirect
-    @url {String}
-    @permanent {Boolean} :: optional default false
-    return {Controller};
-*/
-Controller.prototype.redirect = function(url, permanent) {
+ Response redirect
+ @url {String}
+ @permanent {Boolean} :: optional default false
+ return {Controller};
+ */
+Controller.prototype.redirect = function (url, permanent) {
     var self = this;
 
     if (self.res.success || !self.isConnected)
@@ -9479,16 +7363,16 @@ Controller.prototype.redirect = function(url, permanent) {
 };
 
 /*
-    Response Async View
-    @name {String}
-    @model {Object} :: optional
-    @headers {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.redirectAsync = function(url, permanent) {
+ Response Async View
+ @name {String}
+ @model {Object} :: optional
+ @headers {Object} :: optional
+ return {Controller};
+ */
+Controller.prototype.redirectAsync = function (url, permanent) {
     var self = this;
 
-    var fn = function() {
+    var fn = function () {
         self.redirect(url, permanent);
     };
 
@@ -9501,7 +7385,7 @@ Controller.prototype.redirectAsync = function(url, permanent) {
  * @param {Buffer} buffer
  * @return {FrameworkController}
  */
-Controller.prototype.binary = function(buffer) {
+Controller.prototype.binary = function (buffer) {
 
     var self = this;
     var res = self.res;
@@ -9527,11 +7411,11 @@ Controller.prototype.binary = function(buffer) {
 };
 
 /*
-    Basic access authentication (baa)
-    @name {String} :: optional, default Administration
-    return {Object} :: if null then user is not authenticated else return { name: {String}, password: {String} };
-*/
-Controller.prototype.baa = function(name) {
+ Basic access authentication (baa)
+ @name {String} :: optional, default Administration
+ return {Object} :: if null then user is not authenticated else return { name: {String}, password: {String} };
+ */
+Controller.prototype.baa = function (name) {
 
     var self = this;
     var authorization = self.req.headers['authorization'] || '';
@@ -9546,14 +7430,14 @@ Controller.prototype.baa = function(name) {
 };
 
 /*
-    Send data via [S]erver-[s]ent [e]vents
-    @data {String or Object}
-    @eventname {String} :: optional
-    @id {String} :: optional
-    @retry {Number} :: optional, reconnection in milliseconds
-    return {Controller};
-*/
-Controller.prototype.sse = function(data, eventname, id, retry) {
+ Send data via [S]erver-[s]ent [e]vents
+ @data {String or Object}
+ @eventname {String} :: optional
+ @id {String} :: optional
+ @retry {Number} :: optional, reconnection in milliseconds
+ return {Controller};
+ */
+Controller.prototype.sse = function (data, eventname, id, retry) {
 
     var self = this;
     var res = self.res;
@@ -9571,7 +7455,7 @@ Controller.prototype.sse = function(data, eventname, id, retry) {
 
         self.type = 1;
 
-        if (typeof(retry) === UNDEFINED)
+        if (typeof(retry) === consts.UNDEFINED)
             retry = self.subscribe.route.timeout;
 
         self.subscribe.success();
@@ -9580,12 +7464,12 @@ Controller.prototype.sse = function(data, eventname, id, retry) {
         var headers = {
             'Pragma': 'no-cache'
         };
-        headers[RESPONSE_HEADER_CACHECONTROL] = 'no-cache, no-store, max-age=0, must-revalidate';
-        headers[RESPONSE_HEADER_CONTENTTYPE] = 'text/event-stream';
+        headers[consts.RESPONSE_HEADER_CACHECONTROL] = 'no-cache, no-store, max-age=0, must-revalidate';
+        headers[consts.RESPONSE_HEADER_CONTENTTYPE] = 'text/event-stream';
         res.writeHead(self.status, headers);
     }
 
-    if (typeof(data) === OBJECT)
+    if (typeof(data) === consts.OBJECT)
         data = JSON.stringify(data);
     else
         data = data.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
@@ -9613,13 +7497,13 @@ Controller.prototype.sse = function(data, eventname, id, retry) {
 };
 
 /*
-    Send a file or stream via [m]ultipart/x-[m]ixed-[r]eplace
-    @filename {String}
-    @{stream} {Stream} :: optional, if undefined then framework reads by the filename file from disk
-    @cb {Function} :: callback if stream is sent
-    return {Controller}
-*/
-Controller.prototype.mmr = function(filename, stream, cb) {
+ Send a file or stream via [m]ultipart/x-[m]ixed-[r]eplace
+ @filename {String}
+ @{stream} {Stream} :: optional, if undefined then framework reads by the filename file from disk
+ @cb {Function} :: callback if stream is sent
+ return {Controller}
+ */
+Controller.prototype.mmr = function (filename, stream, cb) {
 
     var self = this;
     var res = self.res;
@@ -9642,23 +7526,23 @@ Controller.prototype.mmr = function(filename, stream, cb) {
         var headers = {
             'Pragma': 'no-cache'
         };
-        headers[RESPONSE_HEADER_CONTENTTYPE] = 'multipart/x-mixed-replace; boundary=' + self.boundary;
-        headers[RESPONSE_HEADER_CACHECONTROL] = 'no-cache, no-store, max-age=0, must-revalidate';
+        headers[consts.RESPONSE_HEADER_CONTENTTYPE] = 'multipart/x-mixed-replace; boundary=' + self.boundary;
+        headers[consts.RESPONSE_HEADER_CACHECONTROL] = 'no-cache, no-store, max-age=0, must-revalidate';
         res.writeHead(self.status, headers);
     }
 
     var type = typeof(stream);
 
-    if (type === FUNCTION) {
+    if (type === consts.FUNCTION) {
         cb = stream;
         stream = null;
     }
 
-    res.write('--' + self.boundary + '\r\n' + RESPONSE_HEADER_CONTENTTYPE + ': ' + utils.getContentType(path.extname(filename)) + '\r\n\r\n');
+    res.write('--' + self.boundary + '\r\n' + consts.RESPONSE_HEADER_CONTENTTYPE + ': ' + utils.getContentType(path.extname(filename)) + '\r\n\r\n');
 
-    if (typeof(stream) !== UNDEFINED && stream !== null) {
+    if (typeof(stream) !== consts.UNDEFINED && stream !== null) {
 
-        stream.on('end', function() {
+        stream.on('end', function () {
             self = null;
             if (cb)
                 cb();
@@ -9673,7 +7557,7 @@ Controller.prototype.mmr = function(filename, stream, cb) {
 
     stream = fs.createReadStream(filename);
 
-    stream.on('end', function() {
+    stream.on('end', function () {
         self = null;
         if (cb)
             cb();
@@ -9688,14 +7572,14 @@ Controller.prototype.mmr = function(filename, stream, cb) {
 };
 
 /*
-    Close a response
-    @end {Boolean} :: end response? - default true
-    return {Controller}
-*/
-Controller.prototype.close = function(end) {
+ Close a response
+ @end {Boolean} :: end response? - default true
+ return {Controller}
+ */
+Controller.prototype.close = function (end) {
     var self = this;
 
-    if (typeof(end) === UNDEFINED)
+    if (typeof(end) === consts.UNDEFINED)
         end = true;
 
     if (!self.isConnected)
@@ -9736,37 +7620,37 @@ Controller.prototype.close = function(end) {
 };
 
 /*
-    Send proxy request
-    @url {String}
-    @obj {Object}
-    @fnCallback {Function} :: optional
-    @timeout {Number} :: optional
-    return {Controller}
-*/
-Controller.prototype.proxy = function(url, obj, fnCallback, timeout) {
+ Send proxy request
+ @url {String}
+ @obj {Object}
+ @fnCallback {Function} :: optional
+ @timeout {Number} :: optional
+ return {Controller}
+ */
+Controller.prototype.proxy = function (url, obj, fnCallback, timeout) {
 
     var self = this;
     var headers = {
         'X-Proxy': 'total.js'
     };
 
-    headers[RESPONSE_HEADER_CONTENTTYPE] = 'application/json';
+    headers[consts.RESPONSE_HEADER_CONTENTTYPE] = 'application/json';
 
     var tmp;
 
-    if (typeof(fnCallback) === NUMBER) {
+    if (typeof(fnCallback) === consts.NUMBER) {
         tmp = timeout;
         timeout = fnCallback;
         fnCallback = tmp;
     }
 
-    if (typeof(obj) === FUNCTION) {
+    if (typeof(obj) === consts.FUNCTION) {
         tmp = fnCallback;
         fnCallback = obj;
         obj = tmp;
     }
 
-    utils.request(url, ['post', 'json'], obj, function(error, data, code, headers) {
+    utils.request(url, ['post', 'json'], obj, function (error, data, code, headers) {
 
         if (!fnCallback)
             return;
@@ -9782,26 +7666,26 @@ Controller.prototype.proxy = function(url, obj, fnCallback, timeout) {
 };
 
 /*
-    Return database
-    @name {String}
-    return {NoSQL};
-*/
-Controller.prototype.database = function() {
+ Return database
+ @name {String}
+ return {NoSQL};
+ */
+Controller.prototype.database = function () {
     return framework.database.apply(framework, arguments);
 };
 
 /*
-    Response view
-    @name {String}
-    @model {Object} :: optional
-    @headers {Object} :: optional
-    @isPartial {Boolean} :: optional
-    return {Controller or String}; string is returned when isPartial == true
-*/
-Controller.prototype.view = function(name, model, headers, isPartial) {
+ Response view
+ @name {String}
+ @model {Object} :: optional
+ @headers {Object} :: optional
+ @isPartial {Boolean} :: optional
+ return {Controller or String}; string is returned when isPartial == true
+ */
+Controller.prototype.view = function (name, model, headers, isPartial) {
     var self = this;
 
-    if (typeof(isPartial) === UNDEFINED && typeof(headers) === BOOLEAN) {
+    if (typeof(isPartial) === consts.UNDEFINED && typeof(headers) === consts.BOOLEAN) {
         isPartial = headers;
         headers = null;
     }
@@ -9842,7 +7726,7 @@ Controller.prototype.view = function(name, model, headers, isPartial) {
     var value = '';
     self.$model = model;
 
-    var sitemap = function() {
+    var sitemap = function () {
         return self.sitemap.apply(self, arguments);
     };
 
@@ -9885,7 +7769,7 @@ Controller.prototype.view = function(name, model, headers, isPartial) {
     }
 
     if (!isLayout && self.precache && self.status === 200)
-        self.precache(value, CONTENTTYPE_TEXTHTML, headers, true);
+        self.precache(value, consts.CONTENTTYPE_TEXTHTML, headers, true);
 
     if (isLayout || utils.isNullOrEmpty(self.layoutName)) {
 
@@ -9901,7 +7785,7 @@ Controller.prototype.view = function(name, model, headers, isPartial) {
         if (!self.isConnected)
             return;
 
-        framework.responseContent(self.req, self.res, self.status, value, CONTENTTYPE_TEXTHTML, self.config['allow-gzip'], headers);
+        framework.responseContent(self.req, self.res, self.status, value, consts.CONTENTTYPE_TEXTHTML, self.config['allow-gzip'], headers);
         framework.stats.response.view++;
 
         return self;
@@ -9925,15 +7809,15 @@ Controller.prototype.view = function(name, model, headers, isPartial) {
 };
 
 /*
-    Memorize a view (without layout) into the cache
-    @key {String} :: cache key
-    @expire {Date} :: expiration
-    @disabled {Boolean} :: disabled for debug mode
-    @fnTo {Function} :: if cache not exist
-    @fnFrom {Function} :: optional, if cache is exist
-    return {Controller}
-*/
-Controller.prototype.memorize = function(key, expire, disabled, fnTo, fnFrom) {
+ Memorize a view (without layout) into the cache
+ @key {String} :: cache key
+ @expire {Date} :: expiration
+ @disabled {Boolean} :: disabled for debug mode
+ @fnTo {Function} :: if cache not exist
+ @fnFrom {Function} :: optional, if cache is exist
+ return {Controller}
+ */
+Controller.prototype.memorize = function (key, expire, disabled, fnTo, fnFrom) {
 
     var self = this;
     var output = self.cache.read(key);
@@ -9945,7 +7829,7 @@ Controller.prototype.memorize = function(key, expire, disabled, fnTo, fnFrom) {
             return self;
         }
 
-        self.precache = function(value, contentType, headers, isView) {
+        self.precache = function (value, contentType, headers, isView) {
 
             var options = {
                 content: value,
@@ -9976,14 +7860,14 @@ Controller.prototype.memorize = function(key, expire, disabled, fnTo, fnFrom) {
             self.precache = null;
         };
 
-        if (typeof(disabled) === FUNCTION)
+        if (typeof(disabled) === consts.FUNCTION)
             fnTo = disabled;
 
         fnTo();
         return self;
     }
 
-    if (typeof(disabled) === FUNCTION) {
+    if (typeof(disabled) === consts.FUNCTION) {
         var tmp = fnTo;
         fnTo = disabled;
         fnFrom = tmp;
@@ -9992,17 +7876,17 @@ Controller.prototype.memorize = function(key, expire, disabled, fnTo, fnFrom) {
     if (fnFrom)
         fnFrom();
 
-    if (output.type !== CONTENTTYPE_TEXTHTML)
+    if (output.type !== consts.CONTENTTYPE_TEXTHTML)
         framework.responseContent(self.req, self.res, self.status, output.content, output.type, self.config['allow-gzip'], output.headers);
 
     switch (output.type) {
-        case CONTENTTYPE_TEXTPLAIN:
+        case consts.CONTENTTYPE_TEXTPLAIN:
             framework.stats.response.plain++;
             return self;
         case 'application/json':
             framework.stats.response.json++;
             return self;
-        case CONTENTTYPE_TEXTHTML:
+        case consts.CONTENTTYPE_TEXTHTML:
             framework.stats.response.view++;
             break;
     }
@@ -10030,16 +7914,16 @@ Controller.prototype.memorize = function(key, expire, disabled, fnTo, fnFrom) {
 };
 
 /*
-    Response Async View
-    @name {String}
-    @model {Object} :: optional
-    @headers {Object} :: optional
-    return {Controller};
-*/
-Controller.prototype.viewAsync = function(name, model, headers) {
+ Response Async View
+ @name {String}
+ @model {Object} :: optional
+ @headers {Object} :: optional
+ return {Controller};
+ */
+Controller.prototype.viewAsync = function (name, model, headers) {
     var self = this;
 
-    var fn = function() {
+    var fn = function () {
         self.view(name, model, headers);
     };
 
@@ -10047,1310 +7931,10 @@ Controller.prototype.viewAsync = function(name, model, headers) {
     return self;
 };
 
-// *********************************************************************************
-// =================================================================================
-// Framework.WebSocket
-// =================================================================================
-// *********************************************************************************
-
-var NEWLINE = '\r\n';
-var SOCKET_RESPONSE = 'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Powered-By: {0}\r\nSec-WebSocket-Accept: {1}\r\n\r\n';
-var SOCKET_RESPONSE_ERROR = 'HTTP/1.1 403 Forbidden\r\nConnection: close\r\nX-WebSocket-Reject-Reason: 403 Forbidden\r\n\r\n';
-var SOCKET_HASH = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
-var SOCKET_ALLOW_VERSION = [13];
-
-/*
-    WebSocket
-    @framework {total.js}
-    @path {String}
-    @name {String} :: Controller name
-    return {WebSocket}
-*/
-function WebSocket(framework, path, name, id) {
-    this._keys = [];
-    this.id = id;
-    this.online = 0;
-    this.connections = {};
-    this.repository = {};
-    this.name = name;
-    this.url = utils.path(path);
-
-    // on('open', function(client) {});
-    // on('close', function(client) {});
-    // on('message', function(client, message) {});
-    // on('error', function(error, client) {});
-    events.EventEmitter.call(this);
-}
-
-WebSocket.prototype = {
-
-    get global() {
-        return framework.global;
-    },
-
-    get config() {
-        return framework.config;
-    },
-
-    get cache() {
-        return framework.cache;
-    },
-
-    get isDebug() {
-        return framework.config.debug;
-    },
-
-    get path() {
-        return framework.path;
-    },
-
-    get fs() {
-        return framework.fs;
-    },
-
-    get isSecure() {
-        return this.req.isSecure;
-    },
-
-    get async() {
-
-        var self = this;
-
-        if (typeof(self._async) === UNDEFINED)
-            self._async = new utils.Async(self);
-
-        return self._async;
-    }
-}
-
-WebSocket.prototype.__proto__ = Object.create(events.EventEmitter.prototype, {
-    constructor: {
-        value: WebSocket,
-        enumberable: false
-    }
-});
-
-/*
-    Send message
-    @message {String or Object}
-    @id {String Array}
-    @blacklist {String Array}
-    return {WebSocket}
-*/
-WebSocket.prototype.send = function(message, id, blacklist) {
-
-    var self = this;
-    var keys = self._keys;
-    var length = keys.length;
-
-    if (length === 0)
-        return self;
-
-    var fn = typeof(blacklist) === FUNCTION ? blacklist : null;
-    var is = blacklist instanceof Array;
-
-    if (typeof(id) === UNDEFINED || id === null || id.length === 0) {
-
-        for (var i = 0; i < length; i++) {
-
-            var _id = keys[i];
-
-            if (is && blacklist.indexOf(_id) !== -1)
-                continue;
-
-            var conn = self.connections[_id];
-
-            if (fn !== null && !fn.call(self, _id, conn))
-                continue;
-
-            conn.send(message);
-            framework.stats.response.websocket++;
-        }
-
-        self.emit('send', message, null, []);
-        return self;
-    }
-
-    fn = typeof(id) === FUNCTION ? id : null;
-    is = id instanceof Array;
-
-    for (var i = 0; i < length; i++) {
-
-        var _id = keys[i];
-
-        if (is && id.indexOf(_id) === -1)
-            continue;
-
-        var conn = self.connections[_id];
-
-        if (fn !== null && !fn.call(self, _id, conn) === -1)
-            continue;
-
-        conn.send(message);
-        framework.stats.response.websocket++;
-    }
-
-    self.emit('send', message, id, blacklist);
-    return self;
-};
-
-/*
-    Close connection
-    @id {String Array} :: optional, default null
-    @message {String} :: optional
-    @code {Number} :: optional, default 1000
-    return {WebSocket}
-*/
-WebSocket.prototype.close = function(id, message, code) {
-
-    var self = this;
-    var keys = self._keys;
-
-    if (typeof(id) === STRING) {
-        code = message;
-        message = id;
-        id = null;
-    }
-
-    if (keys === null)
-        return self;
-
-    var length = keys.length;
-
-    if (length === 0)
-        return self;
-
-    if (typeof(id) === UNDEFINED || id === null || id.length === 0) {
-        for (var i = 0; i < length; i++) {
-            var _id = keys[i];
-            self.connections[_id].close(message, code);
-            self._remove(_id);
-        }
-        self._refresh();
-        return self;
-    }
-
-    var is = id instanceof Array;
-    var fn = typeof(id) === FUNCTION ? id : null;
-
-    for (var i = 0; i < length; i++) {
-
-        var _id = keys[i];
-
-        if (is && id.indexOf(_id) === -1)
-            continue;
-
-        var conn = self.connections[_id];
-
-        if (fn !== null && !fn.call(self, _id, conn))
-            continue;
-
-        conn.close(message, code);
-        self._remove(_id);
-    }
-
-    self._refresh();
-    return self;
-};
-
-/*
-    Error
-    @err {Error}
-    return {Framework}
-*/
-WebSocket.prototype.error = function(err) {
-    var self = this;
-    framework.error(typeof(err) === STRING ? new Error(err) : err, self.name, self.path);
-    return self;
-};
-
-/*
-    Problem
-    @message {String}
-    return {Framework}
-*/
-WebSocket.prototype.problem = function(message) {
-    var self = this;
-    framework.problem(message, self.name, self.uri);
-    return self;
-};
-
-/*
-    Change
-    @message {String}
-    return {Framework}
-*/
-WebSocket.prototype.change = function(message) {
-    var self = this;
-    framework.change(message, self.name, self.uri, self.ip);
-    return self;
-};
-
-
-/*
-    All connections (forEach)
-    @fn {Function} :: function(client, index) {}
-    return {WebSocketClient};
-*/
-WebSocket.prototype.all = function(fn) {
-
-    var self = this;
-    var length = self._keys.length;
-
-    for (var i = 0; i < length; i++) {
-        var id = self._keys[i];
-        if (fn(self.connections[id], i))
-            break;
-    }
-
-    return self;
-};
-
-/*
-    Find a connection
-    @id {String or Function} :: function(client, id) {}
-    return {WebSocketClient}
-*/
-WebSocket.prototype.find = function(id) {
-    var self = this;
-    var length = self._keys.length;
-    var isFn = typeof(id) === FUNCTION;
-
-    for (var i = 0; i < length; i++) {
-        var connection = self.connections[self._keys[i]];
-
-        if (!isFn) {
-            if (connection.id === id)
-                return connection;
-            continue;
-        }
-
-        if (id(connection, connection.id))
-            return connection;
-    }
-
-    return null;
-};
-
-/*
-    Destroy a websocket
-*/
-WebSocket.prototype.destroy = function() {
-    var self = this;
-
-    if (self.connections === null && self._keys === null)
-        return self;
-
-    self.close();
-    self.connections = null;
-    self._keys = null;
-    delete framework.connections[self.id];
-    self.emit('destroy');
-    return self;
-};
-
-/*
-    Send proxy request
-    @url {String}
-    @obj {Object}
-    @fnCallback {Function} :: optional
-    return {Controller}
-*/
-WebSocket.prototype.proxy = function(url, obj, fnCallback) {
-
-    var self = this;
-    var headers = {
-        'X-Proxy': 'total.js'
-    };
-    headers[RESPONSE_HEADER_CONTENTTYPE] = 'application/json';
-
-    if (typeof(obj) === FUNCTION) {
-        var tmp = fnCallback;
-        fnCallback = obj;
-        obj = tmp;
-    }
-
-    utils.request(url, 'POST', obj, function(error, data, code, headers) {
-
-        if (!fnCallback)
-            return;
-
-        if ((headers['content-type'] || '').indexOf('application/json') !== -1)
-            data = JSON.parse(data);
-
-        fnCallback.call(self, error, data, code, headers);
-
-    }, headers);
-
-    return self;
-};
-
-/*
-    Internal function
-    return {WebSocket}
-*/
-WebSocket.prototype._refresh = function() {
-    var self = this;
-    self._keys = Object.keys(self.connections);
-    self.online = self._keys.length;
-    return self;
-};
-
-/*
-    Internal function
-    @id {String}
-    return {WebSocket}
-*/
-WebSocket.prototype._remove = function(id) {
-    var self = this;
-    delete self.connections[id];
-    return self;
-};
-
-/*
-    Internal function
-    @client {WebSocketClient}
-    return {WebSocket}
-*/
-WebSocket.prototype._add = function(client) {
-    var self = this;
-    self.connections[client._id] = client;
-    return self;
-};
-
-/*
-    Module caller
-    @name {String}
-    return {Module};
-*/
-WebSocket.prototype.module = function(name) {
-    return framework.module(name);
-};
-
-/*
-    Get a model
-    @name {String} :: name of model
-    return {Object};
-*/
-WebSocket.prototype.model = function(name) {
-    return framework.model(name);
-};
-
-/*
-    Get a model
-    @name {String} :: name of model
-    return {Object};
-*/
-WebSocket.prototype.component = function(name) {
-
-    var self = this;
-    var component = framework.component(name);
-
-    if (component === null)
-        return '';
-
-    var length = arguments.length;
-    var params = [];
-
-    for (var i = 1; i < length; i++)
-        params.push(arguments[i]);
-
-    var output = component.render.apply(self, params);
-    return output;
-};
-
-/*
-    Render component to string
-    @name {String}
-    return {String}
-*/
-WebSocket.prototype.helper = function(name) {
-    var self = this;
-    var helper = framework.helpers[name] || null;
-
-    if (helper === null)
-        return '';
-
-    var length = arguments.length;
-    var params = [];
-
-    for (var i = 1; i < length; i++)
-        params.push(arguments[i]);
-
-    return helper.apply(self, params);
-};
-
-/*
-    Controller functions reader
-    @name {String} :: name of controller
-    return {Object};
-*/
-WebSocket.prototype.functions = function(name) {
-    return (framework.controllers[name] || {}).functions;
-};
-
-/*
-    Return database
-    @name {String}
-    return {Database};
-*/
-WebSocket.prototype.database = function() {
-    return framework.database.apply(framework, arguments);
-};
-
-/*
-    Resource reader
-    @name {String} :: filename
-    @key {String}
-    return {String};
-*/
-WebSocket.prototype.resource = function(name, key) {
-    return framework.resource(name, key);
-};
-
-/*
-    Log
-    @arguments {Object array}
-    return {WebSocket};
-*/
-WebSocket.prototype.log = function() {
-    var self = this;
-    framework.log.apply(framework, arguments);
-    return self;
-};
-
-/*
-    Validation / alias for validate
-    return {ErrorBuilder}
-*/
-WebSocket.prototype.validation = function(model, properties, prefix, name) {
-    return this.validate(model, properties, prefix, name);
-};
-
-/*
-    Validation object
-    @model {Object} :: object to validate
-    @properties {String array} : what properties?
-    @prefix {String} :: prefix for resource = prefix + model name
-    @name {String} :: name of resource
-    return {ErrorBuilder}
-*/
-WebSocket.prototype.validate = function(model, properties, prefix, name) {
-
-    var self = this;
-
-    var resource = function(key) {
-        return self.resource(name || 'default', (prefix || '') + key);
-    };
-
-    var error = new builders.ErrorBuilder(resource);
-    return utils.validate.call(self, model, properties, framework.onValidation, error);
-};
-
-/*
-    Add function to async wait list
-    @name {String}
-    @waitingFor {String} :: name of async function
-    @fn {Function}
-    return {WebSocket}
-*/
-WebSocket.prototype.wait = function(name, waitingFor, fn) {
-    var self = this;
-    self.async.wait(name, waitingFor, fn);
-    return self;
-};
-
-/*
-    Run async functions
-    @callback {Function}
-    return {WebSocket}
-*/
-WebSocket.prototype.complete = function(callback) {
-    var self = this;
-    return self.complete(callback);
-};
-
-/*
-    Add function to async list
-    @name {String}
-    @fn {Function}
-    return {WebSocket}
-*/
-WebSocket.prototype.await = function(name, fn) {
-    var self = this;
-    self.async.await(name, fn);
-    return self;
-};
-
-/*
-    WebSocketClient
-    @req {Request}
-    @socket {Socket}
-    @head {Buffer}
-*/
-function WebSocketClient(req, socket, head) {
-
-    this.handlers = {
-        ondata: this._ondata.bind(this),
-        onerror: this._onerror.bind(this),
-        onclose: this._onclose.bind(this)
-    };
-
-    this.container = null;
-    this._id = null;
-    this.id = '';
-    this.socket = socket;
-    this.req = req;
-    this.isClosed = false;
-    this.errors = 0;
-    this.buffer = new Buffer(0);
-    this.length = 0;
-    this.cookie = req.cookie.bind(req);
-
-    // 1 = raw - not implemented
-    // 2 = plain
-    // 3 = JSON
-
-    this.type = 2;
-    this._isClosed = false;
-}
-
-WebSocketClient.prototype = {
-
-    get protocol() {
-        return (req.headers['sec-websocket-protocol'] || '').replace(/\s/g, '').split(',');
-    },
-
-    get ip() {
-        return this.req.ip;
-    },
-
-    get get() {
-        return this.req.query;
-    },
-
-    get uri() {
-        return this.req.uri;
-    },
-
-    get config() {
-        return this.container.config;
-    },
-
-    get global() {
-        return this.container.global;
-    },
-
-    get session() {
-        return this.req.session;
-    },
-
-    set session(value) {
-        this.req.session = value;
-    },
-
-    get user() {
-        return this.req.user;
-    },
-
-    set user(value) {
-        this.req.user = value;
-    }
-};
-
-WebSocketClient.prototype.__proto__ = Object.create(events.EventEmitter.prototype, {
-    constructor: {
-        value: WebSocketClient,
-        enumberable: false
-    }
-});
-
-/*
-    Internal function
-    @allow {String Array} :: allow origin
-    @protocols {String Array} :: allow protocols
-    @flags {String Array} :: flags
-    return {Boolean}
-*/
-WebSocketClient.prototype.prepare = function(flags, protocols, allow, length, version) {
-
-    var self = this;
-
-    flags = flags || [];
-    protocols = protocols || [];
-    allow = allow || [];
-
-    self.length = length;
-
-    var origin = self.req.headers['origin'] || '';
-
-    if (allow.length > 0) {
-
-        if (allow.indexOf('*') === -1) {
-            for (var i = 0; i < allow.length; i++) {
-                if (origin.indexOf(allow[i]) === -1)
-                    return false;
-            }
-        }
-
-    } else {
-
-        if (origin.indexOf(self.req.headers.host) === -1)
-            return false;
-    }
-
-    if (protocols.length > 0) {
-        for (var i = 0; i < protocols.length; i++) {
-            if (self.protocol.indexOf(protocols[i]) === -1)
-                return false;
-        }
-    }
-
-    if (SOCKET_ALLOW_VERSION.indexOf(utils.parseInt(self.req.headers['sec-websocket-version'])) === -1)
-        return false;
-
-    self.socket.write(new Buffer(SOCKET_RESPONSE.format('total.js v' + version, self._request_accept_key(self.req)), 'binary'));
-
-    self._id = (self.ip || '').replace(/\./g, '') + utils.GUID(20);
-    self.id = self._id;
-
-    return true;
-};
-
-/*
-    Internal function
-    @container {WebSocket}
-    return {WebSocketClient}
-*/
-WebSocketClient.prototype.upgrade = function(container) {
-
-    var self = this;
-    self.container = container;
-
-    //self.socket.setTimeout(0);
-    //self.socket.setNoDelay(true);
-    //self.socket.setKeepAlive(true, 0);
-
-    self.socket.on('data', self.handlers.ondata);
-    self.socket.on('error', self.handlers.onerror);
-    self.socket.on('close', self.handlers.onclose);
-    self.socket.on('end', self.handlers.onclose);
-
-    self.container._add(self);
-    self.container._refresh();
-
-    self.container.framework.emit('websocket-begin', self.container, self);
-    self.container.emit('open', self);
-
-    return self;
-};
-
-/*
-    MIT
-    Written by Jozef Gula
-    ---------------------
-    Internal handler
-    @data {Buffer}
-*/
-WebSocketClient.prototype._ondata = function(data) {
-
-    var self = this;
-
-    if (data != null)
-        self.buffer = Buffer.concat([self.buffer, data]);
-
-    if (self.buffer.length > self.length) {
-        self.errors++;
-        self.container.emit('error', new Error('Maximum request length exceeded.'), self);
-        return;
-    }
-
-    switch (self.buffer[0] & 0x0f) {
-        case 0x01:
-
-            // text message or JSON message
-            if (self.type !== 1)
-                self.parse();
-
-            break;
-        case 0x02:
-
-            // binary message
-            if (self.type === 1)
-                self.parse();
-
-            break;
-        case 0x08:
-            // close
-            self.close();
-            break;
-        case 0x09:
-            // ping
-            self.socket.write(self._state('pong'));
-            break;
-        case 0x0a:
-            // pong
-            break;
-    }
-};
-
-// MIT
-// Written by Jozef Gula
-WebSocketClient.prototype.parse = function() {
-
-    var self = this;
-
-    var bLength = self.buffer[1];
-
-    if (((bLength & 0x80) >> 7) !== 1)
-        return self;
-
-    var length = utils.getMessageLength(self.buffer, self.container.framework.isLE);
-    var index = (self.buffer[1] & 0x7f);
-
-    index = (index == 126) ? 4 : (index == 127 ? 10 : 2);
-
-    if ((index + length + 4) > (self.buffer.length))
-        return self;
-
-    var mask = new Buffer(4);
-    self.buffer.copy(mask, 0, index, index + 4);
-
-    // TEXT
-    if (self.type !== 1) {
-        var output = '';
-        for (var i = 0; i < length; i++)
-            output += String.fromCharCode(self.buffer[index + 4 + i] ^ mask[i % 4]);
-
-        // JSON
-        if (self.type === 3) {
-            try {
-                self.container.emit('message', self, JSON.parse(self.container.config['default-websocket-encodedecode'] === true ? decodeURIComponent(output) : output));
-            } catch (ex) {
-                self.errors++;
-                self.container.emit('error', new Error('JSON parser: ' + ex.toString()), self);
-            }
-        } else
-            self.container.emit('message', self, self.container.config['default-websocket-encodedecode'] === true ? decodeURIComponent(output) : output);
-
-    } else {
-        var binary = new Buffer(length);
-        for (var i = 0; i < length; i++)
-            binary.write(self.buffer[index + 4 + i] ^ mask[i % 4]);
-        self.container.emit('message', self, binary);
-    }
-
-    self.buffer = self.buffer.slice(index + length + 4, self.buffer.length);
-    if (self.buffer.length >= 2)
-        self.parse(null);
-
-    return self;
-};
-
-/*
-    Internal handler
-*/
-WebSocketClient.prototype._onerror = function(error) {
-    var self = this;
-    if (error.stack.indexOf('ECONNRESET') !== -1 || error.stack.indexOf('socket is closed') !== -1 || error.stack.indexOf('EPIPE') !== -1)
-        return;
-    self.container.emit('error', error, self);
-};
-
-/*
-    Internal handler
-*/
-WebSocketClient.prototype._onclose = function() {
-    var self = this;
-
-    if (self._isClosed)
-        return;
-
-    self._isClosed = true;
-    self.container._remove(self._id);
-    self.container._refresh();
-    self.container.emit('close', self);
-    self.container.framework.emit('websocket-end', self.container, self);
-};
-
-/*
-    Send message
-    @message {String or Object}
-    return {WebSocketClient}
-*/
-WebSocketClient.prototype.send = function(message) {
-
-    var self = this;
-
-    if (self.isClosed)
-        return;
-
-    if (self.type !== 1) {
-
-        var data = self.type === 3 ? JSON.stringify(message) : (message || '').toString();
-        if (self.container.config['default-websocket-encodedecode'] === true && data.length > 0)
-            data = encodeURIComponent(data);
-
-        self.socket.write(utils.getWebSocketFrame(0, data, 0x01));
-
-    } else {
-
-        if (message !== null)
-            self.socket.write(utils.getWebSocketFrame(0, message, 0x02));
-
-    }
-
-    return self;
-};
-
-/*
-    Close connection
-    return {WebSocketClient}
-*/
-WebSocketClient.prototype.close = function(message, code) {
-    var self = this;
-
-    if (self.isClosed)
-        return self;
-
-    self.isClosed = true;
-    self.socket.end(utils.getWebSocketFrame(code || 1000, message || '', 0x08));
-
-    return self;
-};
-
-/*
-    Send state
-    return {Buffer}
-*/
-WebSocketClient.prototype._state = function(type) {
-    var value = new Buffer(6);
-    switch (type) {
-        case 'close':
-            value[0] = 0x08;
-            value[0] |= 0x80;
-            value[1] = 0x80;
-            break;
-        case 'ping':
-            value[0] = 0x09;
-            value[0] |= 0x80;
-            value[1] = 0x80;
-            break;
-        case 'pong':
-            value[0] = 0x0A;
-            value[0] |= 0x80;
-            value[1] = 0x80;
-            break;
-    }
-    var iMask = Math.floor(Math.random() * 255);
-    value[2] = iMask >> 8;
-    value[3] = iMask;
-    iMask = Math.floor(Math.random() * 255);
-    value[4] = iMask >> 8;
-    value[5] = iMask;
-    return value;
-};
-
-WebSocketClient.prototype._request_accept_key = function(req) {
-    var sha1 = crypto.createHash('sha1');
-    sha1.update((req.headers['sec-websocket-key'] || '') + SOCKET_HASH);
-    return sha1.digest('base64');
-};
-
-// *********************************************************************************
-// =================================================================================
-// Prototypes
-// =================================================================================
-// *********************************************************************************
-
-/*
-    Write cookie
-    @name {String}
-    @value {String}
-    @expires {Date} :: optional
-    @options {Object} :: options.path, options.domain, options.secure, options.httpOnly, options.expires
-    return {ServerResponse}
-*/
-http.ServerResponse.prototype.cookie = function(name, value, expires, options) {
-
-    var builder = [name + '=' + encodeURIComponent(value)];
-
-    if (expires && !utils.isDate(expires) && typeof(expires) === 'object') {
-        options = expires;
-        expires = options.expires || options.expire || null;
-    }
-
-    if (!options)
-        options = {};
-
-    options.path = options.path || '/';
-
-    if (expires)
-        builder.push('Expires=' + expires.toUTCString());
-
-    if (options.domain)
-        builder.push('Domain=' + options.domain);
-
-    if (options.path)
-        builder.push('Path=' + options.path);
-
-    if (options.secure)
-        builder.push('Secure');
-
-    if (options.httpOnly || options.httponly || options.HttpOnly)
-        builder.push('HttpOnly');
-
-    var self = this;
-
-    var arr = self.getHeader('set-cookie') || [];
-
-    arr.push(builder.join('; '));
-    self.setHeader('Set-Cookie', arr);
-
-    return self;
-};
-
-http.ServerResponse.prototype.json = function() {
-    var self = this;
-    self.removeHeader('Etag');
-    self.removeHeader('Last-Modified');
-    return self;
-};
-
-/**
- * Disable HTTP cache for current response
- * @return {Response}
- */
-http.ServerResponse.prototype.noCache = function() {
-    var self = this;
-    self.removeHeader('Etag');
-    self.removeHeader('Last-Modified');
-    return self;
-};
-
-/**
- * Send
- * @param {Number} code Response status code, optional
- * @param {Object} body Body
- * @param {String} type Content-Type, optional
- * @return {Response}
- */
-http.ServerResponse.prototype.send = function(code, body, type) {
-
-    var self = this;
-
-    if (self.headersSent)
-        return self;
-
-    var res = self;
-    var req = self.req;
-    var contentType = type;
-
-    if (typeof(body) === UNDEFINED) {
-        body = code;
-        code = 200;
-    }
-
-    switch (typeof(body)) {
-        case STRING:
-            if (!contentType)
-                contentType = 'text/html';
-            break;
-
-        case NUMBER:
-
-            if (!contentType)
-                contentType = 'text/plain';
-
-            body = utils.httpStatus(body);
-
-            break;
-
-        case BOOLEAN:
-        case OBJECT:
-
-            if (!contentType)
-                contentType = 'application/json';
-
-            body = JSON.stringify(body);
-            break;
-    }
-
-    var accept = req.headers['accept-encoding'] || '';
-    var headers = {};
-
-    headers[RESPONSE_HEADER_CACHECONTROL] = 'private';
-    headers['Vary'] = 'Accept-Encoding';
-
-    // Safari resolve
-    if (contentType === 'application/json')
-        headers[RESPONSE_HEADER_CACHECONTROL] = 'private, no-cache, no-store, must-revalidate';
-
-    if ((/text|application/).test(contentType))
-        contentType += '; charset=utf-8';
-
-    headers[RESPONSE_HEADER_CONTENTTYPE] = contentType;
-
-    res.success = true;
-    req.clear(true);
-
-    if (accept.lastIndexOf('gzip') !== -1) {
-        var buffer = new Buffer(body);
-        zlib.gzip(buffer, function(err, data) {
-
-            if (err) {
-                res.writeHead(code, headers);
-                res.end(body, ENCODING);
-                return;
-            }
-
-            headers['Content-Encoding'] = 'gzip';
-            headers[RESPONSE_HEADER_CONTENTLENGTH] = data.length;
-
-            res.writeHead(code, headers);
-            res.end(data, ENCODING);
-        });
-
-        return self;
-    }
-
-    headers[RESPONSE_HEADER_CONTENTLENGTH] = body.length;
-
-    res.writeHead(code, headers);
-    res.end(body, ENCODING);
-
-    return self;
-};
-
-/**
- * Response static file
- * @return {Response}
- */
-http.ServerResponse.prototype.continue = function() {
-    var self = this;
-
-    if (self.headersSent)
-        return;
-
-    framework.responseStatic(self.req, self);
-    return self;
-};
-
-/**
- * Response file
- * @param {String} filename
- * @param {String} downloadName Optional
- * @param {Object} headers Optional
- * @return {Framework}
- */
-http.ServerResponse.prototype.file = function(filename, downloadName, headers) {
-    var self = this;
-    if (self.headersSent)
-        return;
-    framework.responseFile(self.req, self, filename, downloadName, headers);
-    return self;
-};
-
-/**
- * Response stream
- * @param {String} filename
- * @param {String} downloadName Optional
- * @param {Object} headers Optional
- * @return {Framework}
- */
-http.ServerResponse.prototype.stream = function(contentType, stream, downloadName, headers) {
-    var self = this;
-    if (self.headersSent)
-        return;
-    framework.responseStream(self.req, self, contentType, stream, downloadName, headers);
-    return self;
-};
-
-/**
- * Response JSON
- * @param {Object} obj
- * @return {Response}
- */
-http.ServerResponse.prototype.json = function(obj) {
-    return this.send(200, obj, 'application/json');
-};
-
-var _tmp = http.IncomingMessage.prototype;
-
-http.IncomingMessage.prototype = {
-
-    get ip() {
-        var self = this;
-        var proxy = self.headers['x-forwarded-for'];
-        //  x-forwarded-for: client, proxy1, proxy2, ...
-        if (typeof(proxy) !== UNDEFINED)
-            return proxy.split(',', 1)[0] || self.connection.removiewddress;
-        return self.connection.remoteAddress;
-    },
-
-    get query() {
-        var self = this;
-        if (self._dataGET)
-            return self._dataGET;
-        self._dataGET = qs.parse(self.uri.query);
-        return self._dataGET;
-    },
-
-    get subdomain() {
-
-        var self = this;
-
-        if (self._subdomain)
-            return self._subdomain;
-
-        var subdomain = self.uri.host.toLowerCase().replace(/^www\./i, '').split('.');
-        if (subdomain.length > 2)
-            self._subdomain = subdomain.slice(0, subdomain.length - 2); // example: [subdomain].domain.com
-        else
-            self._subdomain = null;
-
-        return self._subdomain;
-    },
-
-    get host() {
-        return this.headers['host'];
-    },
-
-    get isSecure() {
-        return this.uri.protocol === 'https' || this.uri.protocol === 'wss';
-    },
-
-    get language() {
-        return ((this.headers['accept-language'].split(';')[0] || '').split(',')[0] || '').toLowerCase();
-    }
-}
-
-http.IncomingMessage.prototype.__proto__ = _tmp;
-
-/**
- * Signature request (user-agent + ip + referer + current URL + custom key)
- * @param {String} key Custom key.
- * @return {Request}
- */
-http.IncomingMessage.prototype.signature = function(key) {
-    var self = this;
-    return framework.encrypt((self.headers['user-agent'] || '') + '#' + self.ip + '#' + self.url + '#' + (key || ''), 'request-signature', false);
-};
-
-/**
- * Disable HTTP cache for current request
- * @return {Request}
- */
-http.IncomingMessage.prototype.noCache = function() {
-    var self = this;
-    delete self.headers['if-none-match'];
-    delete self.headers['if-modified-since'];
-    return self;
-};
-
-/**
- * Read a cookie from current request
- * @param  {String} name Cookie name.
- * @return {String}      Cookie value (default: '')
- */
-http.IncomingMessage.prototype.cookie = function(name) {
-
-    var self = this;
-
-    if (typeof(self.cookies) !== UNDEFINED)
-        return decodeURIComponent(self.cookies[name] || '');
-
-    self.cookies = {};
-
-    var cookie = self.headers['cookie'] || '';
-    if (cookie.length === 0)
-        return '';
-
-    var arr = cookie.split(';');
-    var length = arr.length;
-
-    for (var i = 0; i < length; i++) {
-        var c = arr[i].trim().split('=');
-        self.cookies[c.shift()] = c.join('=');
-    }
-
-    return decodeURIComponent(self.cookies[name] || '');
-};
-
-/*
-    Read authorization header
-    return {Object}
-*/
-http.IncomingMessage.prototype.authorization = function() {
-
-    var self = this;
-    var authorization = self.headers['authorization'] || '';
-
-    if (authorization === '')
-        return {
-            name: '',
-            password: ''
-        };
-
-    var arr = new Buffer(authorization.replace('Basic ', '').trim(), 'base64').toString('utf8').split(':');
-    return {
-        name: arr[0] || '',
-        password: arr[1] || ''
-    };
-};
-
-/*
-    Clear all uploaded files
-    @isAuto {Booelan} :: system, internal, optional default false
-    return {ServerRequest}
-*/
-http.IncomingMessage.prototype.clear = function(isAuto) {
-
-    var self = this;
-    var files = self.files;
-
-    if (!files)
-        return self;
-
-    if (isAuto && self._manual)
-        return self;
-
-    var length = files.length;
-
-    if (length === 0)
-        return self;
-
-    var arr = [];
-    for (var i = 0; i < length; i++)
-        arr.push(files[i].path);
-
-    framework.unlink(arr);
-    self.files = null;
-
-    return self;
-};
-
-/*
-    Return hostname with protocol and port
-    @path {String} :: optional
-    return {String}
-*/
-http.IncomingMessage.prototype.hostname = function(path) {
-
-    var self = this;
-    var uri = self.uri;
-
-    if (typeof(path) !== UNDEFINED) {
-        if (path[0] !== '/')
-            path = '/' + path;
-    }
-
-    return uri.protocol + '//' + uri.hostname + (uri.port !== null && typeof(uri.port) !== UNDEFINED && uri.port !== 80 ? ':' + uri.port : '') + (path || '');
-};
-
+require('./controllerViewHelpers')(Controller);
 global.framework = module.exports = new Framework();
 
-process.on('uncaughtException', function(e) {
+process.on('uncaughtException', function (e) {
 
     if (framework.isTest) {
         // HACK: this method is created dynamically in framework.testing();
@@ -11361,21 +7945,21 @@ process.on('uncaughtException', function(e) {
     framework.error(e, '', null);
 
     if (e.toString().indexOf('listen EADDRINUSE') !== -1) {
-        if (typeof(process.send) === FUNCTION)
+        if (typeof(process.send) === consts.FUNCTION)
             process.send('stop');
         process.exit(0);
     }
 });
 
-process.on('SIGTERM', function() {
+process.on('SIGTERM', function () {
     framework.stop();
 });
 
-process.on('SIGINT', function() {
+process.on('SIGINT', function () {
     framework.stop();
 });
 
-process.on('exit', function() {
+process.on('exit', function () {
 
     if (framework.onExit)
         framework.onExit(framework);
@@ -11383,9 +7967,9 @@ process.on('exit', function() {
     framework.emit('exit');
 });
 
-process.on('message', function(msg, h) {
+process.on('message', function (msg, h) {
 
-    if (typeof(msg) !== STRING) {
+    if (typeof(msg) !== consts.STRING) {
         framework.emit('message', msg, h);
         return;
     }

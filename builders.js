@@ -6,18 +6,13 @@
 'use strict';
 
 var utils = require('./utils');
+var consts = require('./consts');
 
 var schema = {};
 var schemaValidation = {};
 var schemaValidator = {};
 var schemaDefaults = {};
 
-var UNDEFINED = 'undefined';
-var FUNCTION = 'function';
-var OBJECT = 'object';
-var STRING = 'string';
-var NUMBER = 'number';
-var BOOLEAN = 'boolean';
 var REQUIRED = 'The field "@" is required.';
 
 /**
@@ -37,7 +32,7 @@ function ErrorBuilder(onResource) {
     this.replacer = [];
     this.isPrepared = false;
 
-    if (typeof(onResource) === UNDEFINED)
+    if (typeof(onResource) === consts.UNDEFINED)
         this._resource();
 }
 
@@ -95,13 +90,13 @@ function Pagination(items, page, max, format) {
  */
 exports.schema = function(name, obj, defaults, validator) {
 
-    if (typeof(obj) === UNDEFINED)
+    if (typeof(obj) === consts.UNDEFINED)
         return schema[name] || null;
 
-    if (typeof(defaults) === FUNCTION)
+    if (typeof(defaults) === consts.FUNCTION)
         schemaDefaults[name] = defaults;
 
-    if (typeof(validator) === FUNCTION)
+    if (typeof(validator) === consts.FUNCTION)
         schemaValidator[name] = validator;
 
     schema[name] = obj;
@@ -135,7 +130,7 @@ exports.isJoin = function(value) {
         return false;
     if (value[0] === '[')
         return true;
-    return typeof(schema[value]) !== UNDEFINED;
+    return typeof(schema[value]) !== consts.UNDEFINED;
 };
 
 /**
@@ -146,12 +141,12 @@ exports.isJoin = function(value) {
  */
 exports.validation = function(name, fn) {
 
-    if (typeof(fn) === FUNCTION) {
+    if (typeof(fn) === consts.FUNCTION) {
         schemaValidator[name] = fn;
         return true;
     }
 
-    if (typeof(fn) === UNDEFINED)
+    if (typeof(fn) === consts.UNDEFINED)
         return schemaValidation[name] || [];
 
     schemaValidation[name] = fn;
@@ -170,7 +165,7 @@ exports.validate = function(name, model) {
     var fn = schemaValidator[name];
     var builder = new ErrorBuilder();
 
-    if (typeof(fn) === UNDEFINED)
+    if (typeof(fn) === consts.UNDEFINED)
         return builder;
 
     return utils.validate.call(this, model, Object.keys(schema[name]), fn, builder);
@@ -210,13 +205,13 @@ exports.defaults = function(name) {
 
         if (defaults) {
             var def = defaults(property, true);
-            if (typeof(def) !== UNDEFINED) {
+            if (typeof(def) !== consts.UNDEFINED) {
                 item[property] = def;
                 continue;
             }
         }
 
-        if (type === FUNCTION) {
+        if (type === consts.FUNCTION) {
 
             if (value === Number) {
                 item[property] = 0;
@@ -252,22 +247,22 @@ exports.defaults = function(name) {
             continue;
         }
 
-        if (type === NUMBER) {
+        if (type === consts.NUMBER) {
             item[property] = 0;
             continue;
         }
 
-        if (type === BOOLEAN) {
+        if (type === consts.BOOLEAN) {
             item[property] = false;
             continue;
         }
 
-        if (type === OBJECT) {
+        if (type === consts.OBJECT) {
             item[property] = value instanceof Array ? [] : {};
             continue;
         }
 
-        if (type !== STRING) {
+        if (type !== consts.STRING) {
             item[property] = null;
             continue;
         }
@@ -284,12 +279,12 @@ exports.defaults = function(name) {
 
         var lower = value.toLowerCase();
 
-        if (lower.contains([STRING, 'text', 'varchar', 'nvarchar', 'binary', 'data', 'base64'])) {
+        if (lower.contains([consts.STRING, 'text', 'varchar', 'nvarchar', 'binary', 'data', 'base64'])) {
             item[property] = '';
             continue;
         }
 
-        if (lower.contains(['int', NUMBER, 'decimal', 'byte', 'float', 'double'])) {
+        if (lower.contains(['int', consts.NUMBER, 'decimal', 'byte', 'float', 'double'])) {
             item[property] = 0;
             continue;
         }
@@ -338,7 +333,7 @@ exports.prepare = function(name, model) {
     if (obj === null)
         return null;
 
-    if (model === null || typeof(model) === UNDEFINED)
+    if (model === null || typeof(model) === consts.UNDEFINED)
         return exports.defaults(name);
 
     var tmp;
@@ -352,20 +347,20 @@ exports.prepare = function(name, model) {
         var property = properties[i];
         var val = model[property];
 
-        if (typeof(val) === UNDEFINED && defaults)
+        if (typeof(val) === consts.UNDEFINED && defaults)
             val = defaults(property, false);
 
-        if (typeof(val) === UNDEFINED)
+        if (typeof(val) === consts.UNDEFINED)
             val = '';
 
         var value = item[property];
         var type = typeof(value);
         var typeval = typeof(val);
 
-        if (typeval === FUNCTION)
+        if (typeval === consts.FUNCTION)
             val = val();
 
-        if (type === FUNCTION) {
+        if (type === consts.FUNCTION) {
 
             if (value === Number) {
                 item[property] = utils.parseFloat(val);
@@ -388,18 +383,18 @@ exports.prepare = function(name, model) {
                 tmp = null;
 
                 switch (typeval) {
-                    case OBJECT:
+                    case consts.OBJECT:
                         if (utils.isDate(val))
                             tmp = val;
                         else
                             tmp = null;
                         break;
 
-                    case NUMBER:
+                    case consts.NUMBER:
                         tmp = new Date(val);
                         break;
 
-                    case STRING:
+                    case consts.STRING:
                         if (val === '')
                             tmp = null;
                         else
@@ -407,7 +402,7 @@ exports.prepare = function(name, model) {
                         break;
                 }
 
-                if (tmp !== null && typeof(tmp) === OBJECT && tmp.toString() === 'Invalid Date')
+                if (tmp !== null && typeof(tmp) === consts.OBJECT && tmp.toString() === 'Invalid Date')
                     tmp = null;
 
                 item[property] = tmp || (defaults ? isUndefined(defaults(property), null) : null);
@@ -418,27 +413,27 @@ exports.prepare = function(name, model) {
             continue;
         }
 
-        if (type === OBJECT) {
-            item[property] = typeval === OBJECT ? val : null;
+        if (type === consts.OBJECT) {
+            item[property] = typeval === consts.OBJECT ? val : null;
             continue;
         }
 
-        if (type === NUMBER) {
+        if (type === consts.NUMBER) {
             item[property] = utils.parseFloat(val);
             continue;
         }
 
-        if (val === null || typeval === UNDEFINED)
+        if (val === null || typeval === consts.UNDEFINED)
             tmp = '';
         else
             tmp = val.toString();
 
-        if (type === BOOLEAN) {
+        if (type === consts.BOOLEAN) {
             item[property] = tmp === 'true' || tmp === '1';
             continue;
         }
 
-        if (type !== STRING) {
+        if (type !== consts.STRING) {
             item[property] = tmp;
             continue;
         }
@@ -497,7 +492,7 @@ exports.prepare = function(name, model) {
 
         var lower = value.toLowerCase();
 
-        if (lower.contains([STRING, 'text', 'varchar', 'nvarchar'])) {
+        if (lower.contains([consts.STRING, 'text', 'varchar', 'nvarchar'])) {
 
             var beg = lower.indexOf('(');
             if (beg === -1) {
@@ -515,12 +510,12 @@ exports.prepare = function(name, model) {
             continue;
         }
 
-        if (lower.contains(['decimal', NUMBER, 'float', 'double'])) {
+        if (lower.contains(['decimal', consts.NUMBER, 'float', 'double'])) {
             item[property] = utils.parseFloat(val);
             continue;
         }
 
-        if (lower.contains('bool', BOOLEAN)) {
+        if (lower.contains('bool', consts.BOOLEAN)) {
             item[property] = tmp === 'true' || tmp === '1';
             continue;
         }
@@ -532,12 +527,12 @@ exports.prepare = function(name, model) {
                 continue;
             }
 
-            if (typeval === STRING) {
+            if (typeval === consts.STRING) {
                 item[property] = val.parseDate();
                 continue;
             }
 
-            if (typeval === NUMBER) {
+            if (typeval === consts.NUMBER) {
                 item[property] = new Date(val);
                 continue;
             }
@@ -553,7 +548,7 @@ exports.prepare = function(name, model) {
 };
 
 function isUndefined(value, def) {
-    if (typeof(value) === UNDEFINED)
+    if (typeof(value) === consts.UNDEFINED)
         return def;
     return value;
 }
@@ -747,7 +742,7 @@ ErrorBuilder.prototype._prepare = function() {
         else
             o.error = self.onResource(o.error.substring(1));
 
-        if (typeof(o.error) === UNDEFINED)
+        if (typeof(o.error) === consts.UNDEFINED)
             o.error = REQUIRED.replace('@', o.name);
     }
 
@@ -906,13 +901,13 @@ Pagination.prototype.render = function(max, format) {
     var builder = [];
     format = format || self.format;
 
-    if (typeof(max) === STRING) {
+    if (typeof(max) === consts.STRING) {
         var tmp = format;
         format = max;
         max = format;
     }
 
-    if (typeof(max) === UNDEFINED || max === null) {
+    if (typeof(max) === consts.UNDEFINED || max === null) {
         for (var i = 1; i < self.count + 1; i++)
             builder.push({
                 url: format.format(i, self.items, self.count),
@@ -1026,7 +1021,7 @@ UrlBuilder.prototype.toString = function() {
  */
 UrlBuilder.prototype.hasValue = function(keys) {
 
-    if (typeof(keys) === UNDEFINED)
+    if (typeof(keys) === consts.UNDEFINED)
         return false;
 
     var self = this;
@@ -1036,7 +1031,7 @@ UrlBuilder.prototype.hasValue = function(keys) {
 
     for (var i = 0; i < keys.length; i++) {
         var val = self.builder[keys[i]];
-        if (typeof(val) === UNDEFINED || val === null)
+        if (typeof(val) === consts.UNDEFINED || val === null)
             return false;
     }
 
