@@ -11195,6 +11195,9 @@ http.IncomingMessage.prototype = {
         self._dataGET = qs.parse(self.uri.query);
         return self._dataGET;
     },
+    set query(x) {
+        // NOOP - Fix for Primus
+    },
 
     get subdomain() {
 
