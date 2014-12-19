@@ -6070,7 +6070,7 @@ Subscribe.prototype.end = function() {
 /*
     @status {Number} :: HTTP status
 */
-Subscribe.prototype.execute = function(status) {
+Subscribe.prototype.execute = function(status, problem) {
 
     var self = this;
     var route = self.route;
@@ -6107,7 +6107,7 @@ Subscribe.prototype.execute = function(status) {
     }
 
     if (route === null) {
-        framework.responseContent(req, res, status || 404, utils.httpStatus(status || 404), CONTENTTYPE_TEXTPLAIN, framework.config['allow-gzip']);
+        framework.responseContent(req, res, status || 404, problem || utils.httpStatus(status || 404), CONTENTTYPE_TEXTPLAIN, framework.config['allow-gzip']);
         return self;
     }
 
@@ -6367,7 +6367,7 @@ Subscribe.prototype.route400 = function(problem) {
     var self = this;
     self.route = framework.lookup(self.req, '#400', []);
     self.exception = problem;
-    self.execute(400);
+    self.execute(400, problem);
     return self;
 };
 
@@ -9299,7 +9299,7 @@ Controller.prototype.view400 = function(problem) {
     self.subscribe.success();
     self.subscribe.route = framework.lookup(self.req, '#400', []);
     self.subscribe.exception = problem;
-    self.subscribe.execute(400);
+    self.subscribe.execute(400, problem);
     return self;
 };
 
@@ -9329,7 +9329,7 @@ Controller.prototype.view401 = function(problem) {
     self.subscribe.success();
     self.subscribe.route = framework.lookup(self.req, '#401', []);
     self.subscribe.exception = problem;
-    self.subscribe.execute(401);
+    self.subscribe.execute(401, problem);
     return self;
 };
 
@@ -9359,7 +9359,7 @@ Controller.prototype.view403 = function(problem) {
     self.subscribe.success();
     self.subscribe.route = framework.lookup(self.req, '#403', []);
     self.subscribe.exception = problem;
-    self.subscribe.execute(403);
+    self.subscribe.execute(403, problem);
     return self;
 };
 
@@ -9388,7 +9388,7 @@ Controller.prototype.view404 = function(problem) {
     self.subscribe.success();
     self.subscribe.route = framework.lookup(self.req, '#404', []);
     self.subscribe.exception = problem;
-    self.subscribe.execute(404);
+    self.subscribe.execute(404, problem);
     return self;
 };
 
@@ -9441,7 +9441,7 @@ Controller.prototype.view501 = function(problem) {
     self.subscribe.success();
     self.subscribe.route = framework.lookup(self.req, '#501', []);
     self.subscribe.exception = problem;
-    self.subscribe.execute(501);
+    self.subscribe.execute(501, problem);
     return self;
 };
 
